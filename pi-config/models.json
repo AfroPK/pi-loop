@@ -1,0 +1,67 @@
+{
+  "providers": {
+    "qwen27": {
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "local",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "supportsUsageInStreaming": true,
+        "maxTokensField": "max_tokens",
+        "thinkingFormat": "chat-template",
+        "chatTemplateKwargs": {
+          "enable_thinking": { "$var": "thinking.enabled" },
+          "reasoning_effort": { "$var": "thinking.effort", "omitWhenOff": true },
+          "preserve_thinking": true
+        }
+      },
+      "models": [
+        {
+          "id": "swift27-xs-64k",
+          "name": "Swift 1.5 Qwen3.8-27B IQ2_XS + MTP, 48K q4_0 (planner / reviewer)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 49152,
+          "maxTokens": 16384,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+          "thinkingLevelMap": {
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "xhigh",
+            "xhigh": "xhigh"
+          }
+        }
+      ]
+    },
+    "ornith": {
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "local",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "supportsUsageInStreaming": true,
+        "maxTokensField": "max_tokens",
+        "thinkingFormat": "chat-template",
+        "chatTemplateKwargs": {
+          "enable_thinking": { "$var": "thinking.enabled" },
+          "preserve_thinking": true
+        },
+        "thinkingTokenBudgetField": "thinking_budget_tokens"
+      },
+      "models": [
+        {
+          "id": "ornith9b-q8",
+          "name": "Ornith 1.5 9B Q8_0 + MTP, 80K q8_0 (executor)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 81920,
+          "maxTokens": 16384,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    }
+  }
+}

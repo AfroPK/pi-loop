@@ -1,0 +1,59 @@
+--- a/extensions/loop-police.ts
++++ b/extensions/loop-police.ts
+@@ -234,6 +234,14 @@
+   let rederiveStreak = 0;
+   let lastThinking = "";
+   let consecutiveLoopCount = 0;
++  // LOCAL PATCH (2026-10-31): sending the recovery message from message_end lands
++  // while Pi still counts the aborted run as streaming, so it becomes a steer into
++  // a run that is ending and is dropped — the session just stops. Hold it here and
++  // deliver it on agent_settled, which starts a fresh run; that run's agent_start
++  // must not wipe escalation/re-derive state, hence keepStateOnNextStart.
++  let pendingRecovery: string | null = null;
++  const RECOVERY_LIMIT = 5;
++  let keepStateOnNextStart = false;
+   let turnIndex = 0;
+   let hookWarned = false;
+   let logWarned = false;
+@@ -328,7 +336,28 @@
+     }
+   }
+ 
+-  pi.on("agent_start", reset);
++  pi.on("agent_start", () => {
++    if (keepStateOnNextStart) {
++      keepStateOnNextStart = false;
++      return;
++    }
++    pendingRecovery = null;
++    reset();
++  });
++
++  pi.on("agent_settled", (_event, ctx) => {
++    if (pendingRecovery === null) return;
++    const content = pendingRecovery;
++    pendingRecovery = null;
++    // A task that can only be done by repeating text never converges; stop
++    // retrying after this many back-to-back loops and let the run end.
++    if (consecutiveLoopCount > RECOVERY_LIMIT) {
++      ctx.ui.notify(`loop-police: ${consecutiveLoopCount} loops in a row, recovery stopped`, "warning");
++      return;
++    }
++    keepStateOnNextStart = true;
++    pi.sendMessage({ customType: "loop-police", content, display: true }, { triggerTurn: true });
++  });
+ 
+   pi.on("turn_start", (event) => {
+     turnIndex = event.turnIndex;
+@@ -483,10 +512,7 @@
+       }
+       const survivor = loopStream === "thinking" ? prefix : extractThinking(event.message);
+       if (survivor) lastThinking = survivor;
+-      pi.sendMessage(
+-        { customType: "loop-police", content: withSuffix(advice), display: true },
+-        { triggerTurn: true }
+-      );
++      pendingRecovery = withSuffix(advice); // delivered on agent_settled (see LOCAL PATCH)
+       return { message: cleaned };
+     }
+ 

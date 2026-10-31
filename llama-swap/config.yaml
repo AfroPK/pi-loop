@@ -1,0 +1,36 @@
+# llama-swap on :8080: one OpenAI-compatible endpoint for every local model. A request's "model" picks which
+# llama-server runs, and only one runs at a time (a 12 GB card holds one of these, not both).
+# Edit the two macros at the top for your paths. Model IDs must match the launchers' MODEL_ID and Pi's models.json.
+healthCheckTimeout: 600
+logLevel: info
+startPort: 10001
+globalTTL: 0
+
+macros:
+  # llama.cpp llama-server build. Tested: official b11869 win-rocm release (see docs/HARDWARE.md for RDNA2 gfx1031).
+  "server": C:\llama.cpp\llama-server.exe --host 127.0.0.1 --port ${PORT}
+  "models": D:\models
+  # Multi-token prediction: both GGUFs below carry their own MTP (nextn) head, so no draft model is needed.
+  # n-max 2 was the fastest on both models (n-max 3 gave no gain; ngram lookup made the 27B slower).
+  "mtp2": --spec-type draft-mtp --spec-draft-n-max 2
+
+models:
+  # PLANNER + REVIEWER: Swift 1.5 (post-train of Qwen3.8-27B), ISTA GSQ-RCO IQ2_XS + MTP, 8.8 GB, all in VRAM.
+  # 48K q4_0 KV: 64K fits only when the desktop uses < ~1 GB of VRAM (check dwm; see docs/TUNING.md).
+  # The id still says 64k for historical reasons; keep it in sync with pi-plan.cmd / pi-review.cmd / models.json.
+  "swift27-xs-64k":
+    cmd: >-
+      ${server} --model ${models}\ukisai\Swift-1.5-Qwen3.8-27B-GSQ-RCO-GGUF\Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ2_XS-mtp.gguf
+      --gpu-layers 99 --fit off --ctx-size 49152 --cache-type-k q4_0 --cache-type-v q4_0
+      --flash-attn on --parallel 1 --threads 6 ${mtp2}
+      --jinja --chat-template-kwargs "{\"reasoning_effort\":\"medium\"}"
+      --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0
+
+  # EXECUTOR: Ornith 1.5 9B (post-train of Qwen3.5-9B) Q8_0 + MTP, 9.8 GB, all in VRAM, ~62 tok/s.
+  # 80K q8_0 KV peaked at 11.78 GB. If the desktop holds > ~1 GB of VRAM, use --ctx-size 65536.
+  "ornith9b-q8":
+    cmd: >-
+      ${server} --model ${models}\ornith-ai\Ornith-1.5-9B-GGUF\Ornith-1.5-9B-Q8_0.gguf
+      --gpu-layers 99 --fit off --ctx-size 81920 --cache-type-k q8_0 --cache-type-v q8_0
+      --flash-attn on --parallel 1 --threads 6 ${mtp2}
+      --jinja --no-webui --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0
