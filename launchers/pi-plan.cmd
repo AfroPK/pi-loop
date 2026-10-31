@@ -7,10 +7,9 @@ REM Add -p to plan non-interactively. For big or vague tasks: pi-plan --thinking
 setlocal
 set "MODEL_ID=swift27-xs-64k"
 set "PI_MODEL=qwen27/swift27-xs-64k"
-set "FIRST=%~1"
-set "NEXTMODE="
-if "%FIRST%"=="" set "NEXTMODE=1"
-if "%FIRST:~0,1%"=="-" set "NEXTMODE=1"
+REM No task = no argument that is not a flag (or the value of --thinking/--model/--name). pi-pe passes -p "task".
+set "NEXTMODE=1"
+call :scan %*
 if not defined NEXTMODE goto server
 if not exist "PLAN.next.md" (
     echo No task given and no PLAN.next.md here. Usage: pi-plan "task"   or   pi-plan TASK.md
@@ -39,3 +38,20 @@ if not defined NEXTMODE goto plain
 goto :eof
 :plain
 %PI% %*
+goto :eof
+
+:scan
+set "C=%~1"
+if not defined C goto :eof
+set "C=%C:~0,1%"
+if /I "%~1"=="--thinking" goto scanvalue
+if /I "%~1"=="--model" goto scanvalue
+if /I "%~1"=="--name" goto scanvalue
+if "%C%"=="-" goto scannext
+set "NEXTMODE="
+goto :eof
+:scanvalue
+shift
+:scannext
+shift
+goto scan
