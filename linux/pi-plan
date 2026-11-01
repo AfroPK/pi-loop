@@ -6,7 +6,7 @@
 # Add -p to plan non-interactively (time limit PI_PLAN_TIMEOUT, default 1800 s). Big or vague: pi-plan --thinking xhigh "task"
 set -u
 source "$(dirname "$(readlink -f "$0")")/_common.sh"
-MODEL_ID=swift27-xs-64k; PI_MODEL=qwen27/swift27-xs-64k
+MODEL_ID=${PI_PLAN_SWAP_ID:-swift27-xs-64k}; PI_MODEL=${PI_PLAN_MODEL:-qwen27/swift27-xs-64k}   # per-machine override: ~/.config/pi-local/env
 # No task = no argument that is not a flag (or the value of --thinking/--model/--name). pi-pe passes -p "task".
 NEXTMODE=1; skip=0
 for a in "$@"; do

@@ -4,6 +4,9 @@
 #   PI_EXTRA_TOOLS=firecrawl_search,firecrawl_scrape  # appended to the planner/reviewer tool lists
 #   PI_EXCLUDE_TOOLS='ssh-*,call_model,mcp__*'        # passed as --exclude-tools to every role ...
 #   PI_EXEC_EXCLUDE_TOOLS='ssh-*,call_model'          # ... except pi-exec, if this is set
+#   PI_PLAN_MODEL=strata/qwen3.8-flash-next-gyro-s     # Pi provider/id for pi-plan ...
+#   PI_PLAN_SWAP_ID=qwen3.8-flash-next-gyro-s          # ... and the llama-swap id that serves it
+#   PI_REVIEW_MODEL=... PI_REVIEW_SWAP_ID=...          # the same for pi-review and pi-code-review
 _here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 [ -f "${PI_LOCAL_ENV:-$HOME/.config/pi-local/env}" ] && source "${PI_LOCAL_ENV:-$HOME/.config/pi-local/env}"
 # Prompts: $PI_PROMPTS, else next to the launchers (installed layout), else ../prompts (running from the repo).
