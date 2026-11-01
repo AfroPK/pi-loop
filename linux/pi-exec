@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# EXECUTOR: Ornith 1.5 9B Q8 (llama-swap id ornith9b-q8, 80K ctx) at thinking low, full tools.
+# EXECUTOR: Ornith 1.5 9B (llama-swap id ornith9b-q8) at thinking low, full tools.
 # Follows PLAN.md step by step, ticks boxes only with proof, writes to ## Blockers when stuck.
-# Usage: pi-exec [pi args]   (in the folder where pi-plan wrote PLAN.md; add -p to run non-interactively)
+# Usage: pi-exec [pi args]   (in the folder where pi-plan wrote PLAN.md; -p: non-interactive, limit PI_EXEC_TIMEOUT 1800 s)
 # Coming from the planner costs one llama-swap model swap.
 set -u
 source "$(dirname "$(readlink -f "$0")")/_common.sh"
@@ -12,5 +12,6 @@ if [ ! -d PLAN.base ]; then
   mkdir PLAN.base && tar --exclude='./PLAN.*' --exclude=./.git --exclude=./node_modules --exclude=./logs -cf - . | (cd PLAN.base && tar xf -)
 fi
 ensure_server "$MODEL_ID" || exit 1
+PI_EXCLUDE_TOOLS="${PI_EXEC_EXCLUDE_TOOLS-${PI_EXCLUDE_TOOLS:-}}"   # the executor may keep tools (e.g. MCP) the planner may not
 prompt_args executor.md || exit 1
-exec pi --model "$PI_MODEL" --thinking low --no-skills "${P[@]}" --name exec @PLAN.md "Execute PLAN.md now, step by step." "$@"
+run_pi exec "${PI_EXEC_TIMEOUT:-1800}" --model "$PI_MODEL" --thinking low --no-skills "${P[@]}" --name exec @PLAN.md "${PI_EXEC_MSG:-Execute PLAN.md now, step by step.}" "$@"

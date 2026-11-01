@@ -1,6 +1,12 @@
-# Shared by the pi-* launchers (sourced, not run). Finds the prompts and makes sure llama-swap serves $1.
-# Prompts: $PI_PROMPTS, else next to the launchers (installed layout), else ../prompts (running from the repo).
+# Shared by the pi-* launchers (sourced, not run). Finds the prompts, makes sure llama-swap serves a model, runs pi.
+# Per-machine settings go in ~/.config/pi-local/env (sourced if present), e.g. on a laptop that uses another PC's models:
+#   PI_REMOTE_SWAP=1                                  # llama-swap runs elsewhere (tunnel on :8080); don't try to start it
+#   PI_EXTRA_TOOLS=firecrawl_search,firecrawl_scrape  # appended to the planner/reviewer tool lists
+#   PI_EXCLUDE_TOOLS='ssh-*,call_model,mcp__*'        # passed as --exclude-tools to every role ...
+#   PI_EXEC_EXCLUDE_TOOLS='ssh-*,call_model'          # ... except pi-exec, if this is set
 _here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+[ -f "${PI_LOCAL_ENV:-$HOME/.config/pi-local/env}" ] && source "${PI_LOCAL_ENV:-$HOME/.config/pi-local/env}"
+# Prompts: $PI_PROMPTS, else next to the launchers (installed layout), else ../prompts (running from the repo).
 if [ -n "${PI_PROMPTS:-}" ]; then PROMPTS="$PI_PROMPTS"
 elif [ -f "$_here/planner.md" ]; then PROMPTS="$_here"
 else PROMPTS="$_here/../prompts"; fi
@@ -12,11 +18,20 @@ prompt_args() {  # prompt_args <role>.md -> sets P to --append-system-prompt for
     [ -f "$PROMPTS/$f" ] || { echo "[pi-local] missing $PROMPTS/$f" >&2; return 1; }
     P+=(--append-system-prompt "$PROMPTS/$f")
   done
+  [ -n "${PI_EXCLUDE_TOOLS:-}" ] && P+=(--exclude-tools "$PI_EXCLUDE_TOOLS")
+  return 0
+}
+
+tools() {  # tools <comma list> -> the list plus PI_EXTRA_TOOLS
+  if [ -n "${PI_EXTRA_TOOLS:-}" ]; then echo "$1,$PI_EXTRA_TOOLS"; else echo "$1"; fi
 }
 
 ensure_server() {  # ensure_server <llama-swap model id>
   local id="$1" i why
   if ! curl -sf -m 3 "$SWAP/v1/models" >/dev/null; then
+    if [ -n "${PI_REMOTE_SWAP:-}" ]; then
+      echo "[pi-local] Nothing answers on $SWAP. On the model PC: systemctl --user start llama-swap laptop-link"; return 1
+    fi
     if ss -ltn 2>/dev/null | grep -q '127.0.0.1:8080 \|\*:8080 \|0.0.0.0:8080 '; then
       echo "[pi-local] Something other than llama-swap is listening on :8080 - stop it first."; return 1
     fi
@@ -33,4 +48,24 @@ ensure_server() {  # ensure_server <llama-swap model id>
     why=$?; sleep 3
   done
   echo "[pi-local] $id did not come up (curl exit $why) - see $SWAP/ui logs."; return 1
+}
+
+run_pi() {  # run_pi <label> <timeout seconds, 0 = none> <pi args...>
+  # Interactive: plain pi, no time limit. With -p (or under pi-loop, PI_FEED=1): hard time limit, and under pi-loop
+  # the JSON event stream is shown as one line per action (pi-feed.py) and saved to PLAN.loop/<time>-<label>.jsonl.
+  local label="$1" t="$2" a batch=; shift 2
+  for a in "$@"; do case "$a" in -p|--print) batch=1 ;; esac; done
+  [ -n "$batch" ] || exec pi "$@"
+  if [ -n "${PI_FEED:-}" ]; then
+    mkdir -p PLAN.loop
+    local log="PLAN.loop/$(date +%m%d-%H%M%S)-$label.jsonl" rc
+    if [ "$t" -gt 0 ]; then timeout -k 15 "$t" pi --mode json "$@" < /dev/null; else pi --mode json "$@" < /dev/null; fi \
+      | python3 "$_here/pi-feed.py" "$label" "$log"
+    rc=${PIPESTATUS[0]}
+  else
+    if [ "$t" -gt 0 ]; then timeout -k 15 "$t" pi "$@" < /dev/null; else pi "$@" < /dev/null; fi
+    rc=$?
+  fi
+  [ "$rc" = 124 ] && echo "[pi-local] $label stopped: time limit ${t}s reached"
+  return "$rc"
 }

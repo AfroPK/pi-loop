@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# pi-loop: run plan -> review -> exec -> code-review, slice after slice, until PLAN.next.md is empty.
+# Every agent runs non-interactively with a live one-line-per-action feed; full sessions go to PLAN.loop/*.jsonl.
+# Usage: pi-loop "task" | pi-loop TASK.md     start a new task (like pi-pe)
+#        pi-loop                              continue wherever the files say (resumes after a stop or Ctrl-C)
+# Options: --max-slices N (default 6)   --max-fix-rounds N (default 2)   --tmux (feed + status side by side)
+# Stops (and tells you why) when exec leaves open boxes or Blockers, a time limit hits the planner or executor,
+# or the same work keeps producing fix slices.
+set -u
+D="$(dirname "$(readlink -f "$0")")"
+MAX_SLICES=6; MAX_FIX=2; TMUX_MODE=; TASK=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --max-slices) MAX_SLICES=$2; shift 2 ;;
+    --max-fix-rounds) MAX_FIX=$2; shift 2 ;;
+    --tmux) TMUX_MODE=1; shift ;;
+    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+    *) TASK=$1; shift ;;
+  esac
+done
+
+if [ -n "$TMUX_MODE" ] && [ -z "${TMUX:-}" ]; then
+  command -v tmux >/dev/null || { echo "tmux is not installed"; exit 1; }
+  s="pi-loop-$$"; args=(--max-slices "$MAX_SLICES" --max-fix-rounds "$MAX_FIX"); [ -n "$TASK" ] && args+=("$TASK")
+  tmux new-session -d -s "$s" -c "$PWD" "$(printf '%q ' "$0" "${args[@]}"); echo; read -rp 'pi-loop finished - press Enter to close'"
+  tmux split-window -h -l 46 -t "$s" -c "$PWD" "$(printf '%q ' "$D/pi-loop-status")"
+  tmux select-pane -t "$s:0.0"
+  exec tmux attach -t "$s"
+fi
+
+export PI_FEED=1
+B=$'\033[1m'; R=$'\033[0m'; [ -t 1 ] || { B=; R=; }
+T0=$(date +%s)
+hdr() { local e=$(( $(date +%s) - T0 )); printf '\n%s══ %s  (total %dm%02ds)%s\n' "$B" "$*" $((e/60)) $((e%60)) "$R"; }
+open_boxes() { grep -c '^- \[ \]' PLAN.md 2>/dev/null || true; }
+# Real blockers only: models often write "(none)", "None.", "- n/a" under the heading
+blockers() { awk '/^## Blockers/{f=1;next} /^## /{f=0} f && NF' PLAN.md 2>/dev/null | grep -v '^<!--' \
+  | grep -viE '^[[:space:]*_-]*\(?(none|n/?a|no blockers?|nothing)[^a-z]*\)?[.[:space:]]*$' | head -3; }
+stop() { hdr "STOPPED: $*"; echo "Files: PLAN.md, PLAN.review.md, PLAN.next.md; sessions in PLAN.loop/"; exit 1; }
+# Small models drift on heading levels ("# Slice 2", "### Slice: ..."); pi-plan and this loop expect "## Slice".
+norm_next() { [ -f PLAN.next.md ] && sed -i -E 's/^#{1,4}[[:space:]]*(Slice\b)/## \1/' PLAN.next.md; true; }
+
+next_slice() { norm_next; grep -m1 '^## Slice' PLAN.next.md 2>/dev/null | sed 's/^## //'; }
+reviewed() { grep -q -e '^### REVIEW CORRECTIONS' -e '^Reviewed: no corrections' PLAN.md || [ -f PLAN.loop/plan-reviewed ]; }
+tries() { cat PLAN.loop/exec-tries 2>/dev/null || echo 0; }
+new_plan() { rm -f PLAN.loop/plan-reviewed PLAN.loop/exec-tries; }
+
+if [ -n "$TASK" ]; then
+  [ -f PLAN.md ] && mv -f PLAN.md PLAN.old.md
+  rm -rf PLAN.notes.md PLAN.files PLAN.rehearsal PLAN.base PLAN.review.md PLAN.review.files PLAN.loop
+  [ -f PLAN.next.md ] && mv -f PLAN.next.md PLAN.next.old.md
+  if [ -f "$TASK" ]; then cp -f "$TASK" PLAN.task.md; else printf '%s\n' "$TASK" > PLAN.task.md; fi
+fi
+mkdir -p PLAN.loop
+
+# The next step is decided from the files on disk, so pi-loop can resume at any point (after a stop, crash or Ctrl-C).
+done0=$(ls PLAN.done-*.md 2>/dev/null | wc -l); slice=$done0; planned=0; fixrounds=0
+while :; do
+  open=$(open_boxes)
+  if [ ! -f PLAN.md ] || { [ "$open" = 0 ] && [ -f PLAN.review.md ]; }; then
+    # ---- plan: the task (fresh start) or the next slice; or finished
+    nxt=$(next_slice)
+    if [ ! -f PLAN.md ] && [ -n "$TASK" ] && [ $planned = 0 ]; then what="task: $(head -c 70 PLAN.task.md | tr '\n' ' ')"
+    elif [ -n "$nxt" ]; then what=$nxt
+    else
+      if [ -f PLAN.next.md ] && grep -q '[^[:space:]]' PLAN.next.md; then
+        stop "PLAN.next.md has text but no '## Slice' section - check it, then rerun pi-loop"
+      fi
+      [ -f PLAN.md ] || { echo 'Nothing to do: give a task (pi-loop "task"), or run it where PLAN.md or PLAN.next.md is.'; exit 1; }
+      hdr "DONE: all slices finished ($slice)"; exit 0
+    fi
+    [ $planned -ge "$MAX_SLICES" ] && stop "slice limit ($MAX_SLICES) reached; next: $nxt"
+    case "$what" in "Slice: fixes from code review"*) fixrounds=$((fixrounds + 1)) ;; *) fixrounds=0 ;; esac
+    [ $fixrounds -gt "$MAX_FIX" ] && stop "$MAX_FIX fix rounds in a row and the code review still finds bugs - see PLAN.review.done-*.md"
+    slice=$((slice + 1)); planned=$((planned + 1)); new_plan
+    hdr "slice $slice: plan  ($what)"
+    if [ ! -f PLAN.md ] && [ -n "$TASK" ] && [ $planned = 1 ]; then
+      "$D/pi-plan" -p "Plan the task described in PLAN.task.md (read it first)." || stop "planner failed or hit its time limit"
+    else
+      "$D/pi-plan" -p || stop "planner failed or hit its time limit"
+    fi
+    [ "$(open_boxes)" -gt 0 ] || stop "planner did not write a PLAN.md with steps"
+  elif [ "$open" -gt 0 ] && ! reviewed; then
+    # ---- plan review (once per plan; a failure or timeout is not fatal)
+    [ $planned = 0 ] && slice=$((slice + 1)) && planned=1
+    hdr "slice $slice: review plan"
+    "$D/pi-review" PLAN.task.md -p || echo "[pi-loop] plan review failed or timed out - executing the plan as written"
+    touch PLAN.loop/plan-reviewed
+  elif [ "$open" -gt 0 ]; then
+    # ---- exec: a full run, then at most one short finish-up pass (often just a box it forgot to tick)
+    [ $planned = 0 ] && slice=$((slice + 1)) && planned=1
+    b=$(blockers); [ -n "$b" ] && stop "PLAN.md has Blockers: $b"
+    t=$(tries); echo $((t + 1)) > PLAN.loop/exec-tries
+    if [ "$t" = 0 ]; then
+      hdr "slice $slice: exec  ($open open boxes)"
+      "$D/pi-exec" -p; rc=$?
+      [ $rc = 124 ] && stop "executor hit its time limit with $(open_boxes) open boxes"
+    elif [ "$t" = 1 ]; then
+      hdr "slice $slice: finish-up exec ($open boxes still open)"
+      PI_EXEC_TIMEOUT=${PI_FINISH_TIMEOUT:-300} PI_EXEC_MSG="PLAN.md still has unticked boxes: $(grep '^- \[ \]' PLAN.md | cut -c1-80 | tr '\n' ';'). For each one: if it is already done, run the command that proves it and tick it; if not, do it now and tick it; if you cannot, write why under ## Blockers. Do nothing else." "$D/pi-exec" -p
+    else
+      stop "executor left $open unticked boxes: $(grep -m2 '^- \[ \]' PLAN.md | tr '\n' ' ')"
+    fi
+    b=$(blockers); [ -n "$b" ] && stop "executor wrote Blockers: $b"
+  else
+    # ---- code review of the finished slice
+    [ $planned = 0 ] && slice=$((slice + 1)) && planned=1
+    hdr "slice $slice: code review"
+    "$D/pi-code-review" -p || echo "[pi-loop] code review failed or timed out"
+    echo "[pi-loop] $(head -1 PLAN.review.md 2>/dev/null)"
+  fi
+done

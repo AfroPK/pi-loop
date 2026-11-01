@@ -105,7 +105,7 @@ The first launcher you run starts llama-swap for you. To run it by hand, use `st
 4. Pi config as in step 4 above, in `~/.pi/agent/`. On Linux Swift fits 64K, so set its `contextWindow` to 65536
    and drop the 48K `modelOverrides` entry.
 5. `cp linux/environment.example.md prompts/environment.md` and edit it (gitignored), then link the launchers onto
-   your PATH: `for f in pi-plan pi-review pi-exec pi-code-review pi-pe pi-stop; do ln -s "$PWD/linux/$f" ~/.local/bin/; done`.
+   your PATH: `for f in pi-plan pi-review pi-exec pi-code-review pi-pe pi-stop pi-loop pi-loop-status; do ln -s "$PWD/linux/$f" ~/.local/bin/; done`.
    They find the prompts in `../prompts` (or set `PI_PROMPTS`).
 6. loop-police and its patch: same as step 6.
 
@@ -122,11 +122,48 @@ The Q6_K decodes faster than the Q8_0 and fits twice the context, but prefills ~
 `linux/llama-swap/config.yaml` uses it under the same `ornith9b-q8` id, so Pi and the launchers need no changes;
 set that model's `contextWindow` to 163840 in models.json. Download `Ornith-1.5-9B-Q6_K.gguf` from the same repo.
 
+### pi-loop: run every slice unattended (Linux)
+
+```bash
+pi-loop "task"          # or pi-loop TASK.md; plain pi-loop resumes wherever the files say
+pi-loop --tmux "task"   # live feed on the left, status pane (stage, model, VRAM, boxes, queued slices) on the right
+```
+
+Per slice: `pi-plan -p` -> `pi-review -p` -> `pi-exec -p` -> `pi-code-review -p`, then the next `## Slice` of
+PLAN.next.md (code-review fix slices come first), until no slices are left. Every agent prints one line per action:
+
+```
+ 3:51 [plan] ▸ bash  cd /home/freddy/bench/loop-test/PLAN.rehearsal && python3 -m unittest test_todo…
+ 3:51 [plan]   ✓  0.1s  OK
+ 5:14 [plan] done in 5m14s  tools 19  output 8915 tok  thinking ~4428 tok
+ ...
+ 2:18 [code-review] done in 2m18s  tools 6  output 3659 tok  thinking ~2543 tok
+ 2:18 [code-review] │ CODE REVIEW: PASS
+```
+
+The next step is decided from the files on disk (no plan / unreviewed plan / open boxes / unreviewed code), so a
+plain `pi-loop` resumes at the right step after a stop or Ctrl-C. First run, a two-slice todo CLI: plan 5m14s /
+3m42s, plan review 2m04s / 1m38s, exec 1m13s / 3m26s, code review 1m42s / 2m18s per slice; 8/8 tests, every
+command and error path correct.
+
+Full sessions are saved in `PLAN.loop/*.jsonl`. It stops and says why when exec leaves open boxes or Blockers, the
+planner or executor hits its time limit, the code review keeps finding bugs (`--max-fix-rounds`, default 2), or the
+slice cap is reached (`--max-slices`, default 6). The reviewers are kept short on purpose: thinking `low`, a ~10
+tool-call budget in the prompt, and hard limits (`PI_REVIEW_TIMEOUT`=360 s, `PI_CODE_REVIEW_TIMEOUT`=480 s;
+`PI_PLAN_TIMEOUT` / `PI_EXEC_TIMEOUT`=1800 s). They end with `PLAN REVIEW: PASS|FIXED n` and
+`VERDICT: PASS|FAIL n` (first line of PLAN.review.md).
+
+llama-swap holds one model at a time for everyone using it, so don't run two jobs at once (e.g. one on a laptop
+through a tunnel and one on the GPU PC): they swap models out from under each other.
+
+Per-machine settings (extra tools, a remote llama-swap) go in `~/.config/pi-local/env`; see the top of
+`linux/_common.sh`.
+
 ## Repo layout
 
 | Path | What |
 |---|---|
-| `linux/` | bash launchers (incl. `pi-code-review`), Linux `environment.example.md`, llama-swap config + systemd user unit |
+| `linux/` | bash launchers (incl. `pi-code-review`, `pi-loop`, `pi-feed.py`), Linux `environment.example.md`, llama-swap config + systemd user unit |
 | `launchers/` | Windows: `pi-plan`, `pi-review`, `pi-exec`, `pi-pe`, `pi-stop`, plus `ensure-server.ps1` (starts llama-swap and loads a model by id) |
 | `prompts/` | `planner.md`, `reviewer.md`, `executor.md`, `code-reviewer.md` (role rules), `environment.example.md` (your machine's facts), `local-session.md` |
 | `llama-swap/` | `config.yaml` with both models' tuned llama-server flags |

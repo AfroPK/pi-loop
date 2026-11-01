@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# CODE REVIEWER: a fresh Swift 27B session (thinking medium) reviews the code pi-exec produced for PLAN.md.
-# Diffs against PLAN.base/ (the snapshot pi-exec takes), proves each bug with a script, writes PLAN.review.md and,
-# for proven findings, a "## Slice: fixes from code review" at the top of PLAN.next.md for pi-plan to build.
-# It never edits project code. Usage: pi-code-review [pi args]   (add -p to run non-interactively)
+# CODE REVIEWER: a fresh Swift 27B session (thinking low, short budget) reviews the code pi-exec produced for PLAN.md.
+# Diffs against PLAN.base/, proves each bug with a script in PLAN.review.files/, writes PLAN.review.md (first line
+# "VERDICT: PASS" or "VERDICT: FAIL n") and, for proven bugs, a "## Slice: fixes from code review" atop PLAN.next.md.
+# It never edits project code. Usage: pi-code-review [pi args]  (-p: non-interactive, limit PI_CODE_REVIEW_TIMEOUT 480 s)
 set -u
 source "$(dirname "$(readlink -f "$0")")/_common.sh"
 MODEL_ID=swift27-xs-64k; PI_MODEL=qwen27/swift27-xs-64k
 [ -f PLAN.md ] || { echo "No PLAN.md in $PWD - nothing to review."; exit 1; }
 [ -d PLAN.base ] || echo "[pi-local] No PLAN.base/ snapshot - reviewing the whole project."
 ensure_server "$MODEL_ID" || exit 1
-rm -rf PLAN.review.files   # a new review starts clean; its proof scripts replace the old ones
+rm -rf PLAN.review.files PLAN.review.md   # a new review starts clean
 prompt_args code-reviewer.md || exit 1
-exec pi --model "$PI_MODEL" --thinking medium --no-skills --tools "read,grep,find,ls,write,edit,bash" "${P[@]}" --name code-review "$@" "Review the code the executor produced for PLAN.md now."
+run_pi code-review "${PI_CODE_REVIEW_TIMEOUT:-480}" --model "$PI_MODEL" --thinking "${PI_REVIEW_THINKING:-low}" --no-skills \
+  --tools "$(tools read,grep,find,ls,write,edit,bash)" "${P[@]}" --name code-review "$@" "Review the code the executor produced for PLAN.md now."
+rc=$?
+if [ ! -s PLAN.review.md ]; then   # timed out or gave up before writing: record it so the loop can move on
+  printf 'VERDICT: NONE (%s)\n' "$([ $rc = 124 ] && echo 'time limit reached' || echo 'no review written')" > PLAN.review.md
+fi
+exit $rc

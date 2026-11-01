@@ -20,5 +20,5 @@ if [ -f "$1" ]; then cp -f "$1" PLAN.task.md; else printf '%s\n' "$1" > PLAN.tas
 if grep -q '^## Slice: fixes from code review' PLAN.next.md 2>/dev/null; then
   echo "Code review found bugs: see PLAN.review.md. Run pi-plan (no task) to plan the fix slice."
 else
-  echo "Code review: no proven bugs (PLAN.review.md)."
+  echo "Code review: $(head -1 PLAN.review.md 2>/dev/null) (PLAN.review.md)."
 fi

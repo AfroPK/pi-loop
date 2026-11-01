@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# REVIEWER: a FRESH Swift session (clean context, thinking medium) checks PLAN.md against the task and appends a
-# "### REVIEW CORRECTIONS" block + one extra step above ## Verify. It never deletes or rewrites existing steps.
-# Usage: pi-review [TASK-file] [pi args]   (add -p to run non-interactively)
+# PLAN REVIEWER: a FRESH Swift session (thinking low, short budget) checks PLAN.md against the task. It only appends a
+# "### REVIEW CORRECTIONS" block (+ one extra step above ## Verify) and ends with "PLAN REVIEW: PASS|FIXED n".
+# Usage: pi-review [TASK-file] [pi args]   (-p: non-interactive, time limit PI_REVIEW_TIMEOUT, default 360 s)
 set -u
 source "$(dirname "$(readlink -f "$0")")/_common.sh"
 MODEL_ID=swift27-xs-64k; PI_MODEL=qwen27/swift27-xs-64k
@@ -12,4 +12,5 @@ if [ $# -gt 0 ] && [ -f "$1" ]; then
   TASKARG="Review PLAN.md now. The task it was planned from is in $1 - read it first."; shift
 fi
 prompt_args reviewer.md || exit 1
-exec pi --model "$PI_MODEL" --thinking medium --no-skills --tools "read,grep,find,ls,edit,bash" "${P[@]}" --name review "$@" "$TASKARG"
+run_pi review "${PI_REVIEW_TIMEOUT:-360}" --model "$PI_MODEL" --thinking "${PI_REVIEW_THINKING:-low}" --no-skills \
+  --tools "$(tools read,grep,find,ls,edit,bash)" "${P[@]}" --name review "$@" "$TASKARG"

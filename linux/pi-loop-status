@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Side pane for pi-loop --tmux (or run it in another terminal in the project folder): refreshes every 3 s.
+SWAP="${PI_SWAP_URL:-http://127.0.0.1:8080}"
+while :; do
+  {
+    printf '\033[1mpi-loop status\033[0m  %s\n\n' "$(date +%H:%M:%S)"
+    last=$(ls -t PLAN.loop/*.jsonl 2>/dev/null | head -1)
+    if [ -n "$last" ]; then
+      age=$(( $(date +%s) - $(stat -c %Y "$last") ))
+      st=$(basename "$last" .jsonl | cut -d- -f3-)
+      printf 'stage   %s  (last event %ss ago)\n' "$st" "$age"
+    fi
+    m=$(curl -s -m 2 "$SWAP/running" | python3 -c 'import json,sys
+try: print(", ".join(f"{m[\"model\"]} ({m[\"state\"]})" for m in json.load(sys.stdin)["running"]) or "none")
+except Exception: print("llama-swap not reachable")' 2>/dev/null)
+    printf 'model   %s\n' "$m"
+    v=$(cat /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null | head -1)
+    [ -n "$v" ] && printf 'VRAM    %s MiB\n' $((v / 1048576))
+    echo
+    if [ -f PLAN.md ]; then
+      printf 'plan    %s\n' "$(head -1 PLAN.md | sed 's/^# *//' | cut -c1-40)"
+      printf 'boxes   %s done, %s open\n' "$(grep -c '^- \[x\]' PLAN.md)" "$(grep -c '^- \[ \]' PLAN.md)"
+      grep -q 'REVIEW CORRECTIONS' PLAN.md && echo 'review  corrections added'
+      grep -q '^Reviewed: no corrections' PLAN.md && echo 'review  no corrections'
+    fi
+    [ -f PLAN.review.md ] && printf 'code    %s\n' "$(head -1 PLAN.review.md)"
+    echo; echo 'queued slices:'
+    grep -E '^#{1,4} *Slice' PLAN.next.md 2>/dev/null | sed -E 's/^#+ *Slice:? */  · /' | cut -c1-44
+    n=$(ls PLAN.done-*.md 2>/dev/null | wc -l); printf '\ndone    %s slice(s)\n' "$n"
+  } > /tmp/.pi-loop-status.$$
+  clear; cat /tmp/.pi-loop-status.$$
+  sleep 3
+done
