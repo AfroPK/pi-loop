@@ -1,4 +1,4 @@
-# Local plan → review → exec for the Pi coding agent
+# pi-loop: local plan → review → exec → code-review for the Pi coding agent
 
 A coding-agent workflow that runs **entirely on local inference** on one 12 GB GPU. It uses
 [llama.cpp](https://github.com/ggml-org/llama.cpp), [llama-swap](https://github.com/mostlygeek/llama-swap) and the
