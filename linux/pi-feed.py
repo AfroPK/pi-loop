@@ -71,6 +71,8 @@ def describe(tool, args):
     return one_line(json.dumps(a), 80)
 
 thinking = out_tokens = tools = 0
+turn_start = first_tok = None      # per model reply: when it was requested, when its first token arrived
+gen_time = 0.0                     # total seconds spent generating (for the average tok/s)
 last_text = ""
 starts = {}
 for line in sys.stdin:
@@ -79,7 +81,10 @@ for line in sys.stdin:
         try: e = json.loads(line)
         except ValueError: continue
         t = e.get("type")
+        if t == "turn_start":
+            turn_start, first_tok = time.time(), None
         if t == "message_update":
+            if first_tok is None: first_tok = time.time()
             ev = e.get("assistantMessageEvent") or {}
             et = ev.get("type")
             if et == "thinking_delta": thinking += len(ev.get("delta", "")); feed("thinking", ev.get("delta", ""))
@@ -103,7 +108,14 @@ for line in sys.stdin:
             if bad or e.get("toolName") == "bash": say(f"  {mark} {dur:4.1f}s  {c('dim', tail)}")
         elif t == "turn_end":
             m = e.get("message") or {}
-            out_tokens += (m.get("usage") or {}).get("output", 0)
+            n = (m.get("usage") or {}).get("output", 0)
+            out_tokens += n
+            if n and first_tok:
+                g = max(time.time() - first_tok, 1e-3); gen_time += g
+                pre = f"  prompt {first_tok - turn_start:4.1f}s" if turn_start else ""
+                flush("thinking"); flush("text")
+                say(c("ylw", f"⚡ {n / g:5.1f} tok/s  {n:5d} tok{pre}"))
+            turn_start = first_tok = None
             txt = "".join(x.get("text", "") for x in (m.get("content") or []) if isinstance(x, dict) and x.get("type") == "text")
             if txt.strip(): last_text = txt.strip()
         elif t == "agent_settled" and e.get("aborted"):
@@ -113,5 +125,6 @@ for line in sys.stdin:
         say(f"(feed: skipped an event: {ex})")
 
 el = time.time() - t0
-say(f"done in {int(el // 60)}m{int(el % 60):02d}s  tools {tools}  output {out_tokens} tok  thinking ~{thinking // 4} tok")
+avg = f"  avg {out_tokens / gen_time:.1f} tok/s" if gen_time else ""
+say(f"done in {int(el // 60)}m{int(el % 60):02d}s  tools {tools}  output {out_tokens} tok  thinking ~{thinking // 4} tok{avg}")
 flush("thinking"); flush("text")
