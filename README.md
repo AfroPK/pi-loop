@@ -81,10 +81,27 @@ pi-stop             &REM unload the model, free VRAM
 The first launcher you run starts llama-swap for you. To run it by hand, use `start-llama-swap.bat`
 (web UI: http://127.0.0.1:8080/ui).
 
+## Linux
+
+`linux/` has bash versions of the launchers. Tested on Lubuntu 26.04 + ROCm 7.1 (see [docs/HARDWARE.md](docs/HARDWARE.md)).
+
+1. Node.js 22+ (any install; a user-local tarball works), then `npm i -g @earendil-works/pi-coding-agent`.
+2. llama-server built for your GPU, and [llama-swap](https://github.com/mostlygeek/llama-swap/releases) (`linux_amd64` tarball).
+3. Copy `linux/llama-swap/config.yaml` next to llama-swap and edit its `server` / `models` macros. Install
+   `linux/llama-swap/llama-swap.service` to `~/.config/systemd/user/` (fix the paths), then
+   `systemctl --user enable --now llama-swap`. The launchers start it if it's stopped.
+4. Pi config as in step 4 above, in `~/.pi/agent/`. On Linux Swift fits 64K, so set its `contextWindow` to 65536
+   and drop the 48K `modelOverrides` entry.
+5. `cp linux/environment.example.md prompts/environment.md` and edit it (gitignored), then link the launchers onto
+   your PATH: `for f in pi-plan pi-review pi-exec pi-pe pi-stop; do ln -s "$PWD/linux/$f" ~/.local/bin/; done`.
+   They find the prompts in `../prompts` (or set `PI_PROMPTS`).
+6. loop-police and its patch: same as step 6.
+
 ## Repo layout
 
 | Path | What |
 |---|---|
+| `linux/` | bash launchers, Linux `environment.example.md`, llama-swap config + systemd user unit |
 | `launchers/` | `pi-plan`, `pi-review`, `pi-exec`, `pi-pe`, `pi-stop`, plus `ensure-server.ps1` (starts llama-swap and loads a model by id) |
 | `prompts/` | `planner.md`, `reviewer.md`, `executor.md` (role rules), `environment.example.md` (your machine's facts), `local-session.md` |
 | `llama-swap/` | `config.yaml` with both models' tuned llama-server flags |

@@ -1,0 +1,10 @@
+[Unit]
+Description=llama-swap model router on 127.0.0.1:8080
+
+[Service]
+ExecStart=%h/llama-swap/llama-swap -config %h/llama-swap/config.yaml -listen 127.0.0.1:8080 -watch-config
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

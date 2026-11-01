@@ -15,3 +15,24 @@ Notes:
 - RX 6800/6900 (gfx1030) and RX 7000 (gfx11xx) cards are officially supported by ROCm, so the release build may work
   as is.
 - NVIDIA: use the CUDA release. All other flags are the same.
+
+# llama.cpp on an RX 6000 card (gfx1031) under Linux
+
+Tested on Lubuntu 26.04 with ROCm 7.1 from the Ubuntu archive (no AMD repo, no container, no DLL swaps):
+
+```bash
+sudo apt install hipcc libamdhip64-dev libhipblas-dev librocblas-dev rocm-cmake rocminfo rocm-smi
+sudo usermod -aG render,video $USER      # then log out and back in
+HSA_OVERRIDE_GFX_VERSION=10.3.0 rocminfo | grep gfx   # must list gfx1030
+HIPCXX="$(hipconfig -l)/clang" HIP_PATH="$(hipconfig -R)" \
+  cmake -S llama.cpp -B llama.cpp/build-hip -DGGML_HIP=ON -DAMDGPU_TARGETS=gfx1030 -DCMAKE_BUILD_TYPE=Release
+cmake --build llama.cpp/build-hip -j --target llama-server
+```
+
+- Ubuntu's rocBLAS ships gfx1030 kernels; `HSA_OVERRIDE_GFX_VERSION=10.3.0` lets gfx1031 use them. llama-swap sets it per model.
+- **Flash-attention crash on ROCm 7.1:** `GGML_ASSERT(max_blocks_per_sm > 0) failed` in `ggml-cuda/fattn-common.cuh`.
+  `hipOccupancyMaxActiveBlocksPerMultiprocessor` returns 0 for the head-size-256 tile kernel. Replacing the assert
+  with a fallback to 1 fixes it; `test-backend-ops -o FLASH_ATTN_EXT` then passes. Re-apply after each `git pull`.
+- Always run `--parallel 1`. The default 4 slots each get MTP draft and compute buffers, and Swift 64K runs out of VRAM.
+- Measured on Linux (MTP n2, decode tok/s): Swift and Ornith fit fully in VRAM at 64K / 80K. ROCm beat Vulkan by
+  ~30-60% on prompt processing and on MoE models with MTP; on Ornith without MTP, Vulkan decoded ~10% faster.

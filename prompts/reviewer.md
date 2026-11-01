@@ -26,7 +26,7 @@ Before you write "X is missing" or "X is wrong", run a command that proves it, a
    - Order: if each run truncates the log, grep a run's lines before the next run starts.
    - GUI programs must not run inside test suites.
 7. **Scope.** The plan must be one small slice: one area of the code, at most 3 requirements, at most 5 steps, about 150 lines of new or changed code. If it is bigger, add a correction saying which requirements to move to PLAN.next.md; do not try to fix a too-big plan line by line.
-8. **Environment.** Check against "This PC": no taken ports (8080!), no `lua` or `python3`, no killing processes by name.
+8. **Environment.** Check against "This PC": no taken ports (8080!), no commands "This PC" says are missing (e.g. `lua`, or `python3` on Windows), no killing processes by name.
 9. **Rehearsal claim.** If Context says the plan was rehearsed, spot-check it: copy the project to the scratch dir (with love2d/ or other runtime folders), apply the copy steps and the small edits, and run the 1-2 most important Verify items. Report it if they fail.
 
 Never run the plan's steps in the real project; experiments go only in the scratch dir. Do not change PLAN.files/; report fixes as corrections.

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# EXECUTOR: Ornith 1.5 9B Q8 (llama-swap id ornith9b-q8, 80K ctx) at thinking low, full tools.
+# Follows PLAN.md step by step, ticks boxes only with proof, writes to ## Blockers when stuck.
+# Usage: pi-exec [pi args]   (in the folder where pi-plan wrote PLAN.md; add -p to run non-interactively)
+# Coming from the planner costs one llama-swap model swap.
+set -u
+source "$(dirname "$(readlink -f "$0")")/_common.sh"
+MODEL_ID=ornith9b-q8; PI_MODEL=ornith/ornith9b-q8
+[ -f PLAN.md ] || { echo "No PLAN.md in $PWD - run pi-plan \"task\" here first."; exit 1; }
+ensure_server "$MODEL_ID" || exit 1
+prompt_args executor.md || exit 1
+exec pi --model "$PI_MODEL" --thinking low --no-skills "${P[@]}" --name exec @PLAN.md "Execute PLAN.md now, step by step." "$@"

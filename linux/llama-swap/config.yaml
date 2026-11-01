@@ -1,0 +1,37 @@
+# llama-swap on Linux, 127.0.0.1:8080. One model runs at a time; a request's "model" picks it.
+# Edit the server and models macros for your paths. Ids must match the launchers' MODEL_ID and Pi's models.json.
+# RX 6000 (gfx1031) on ROCm needs HSA_OVERRIDE_GFX_VERSION=10.3.0 and, on ROCm 7.1, the flash-attn fix in docs/HARDWARE.md.
+healthCheckTimeout: 600
+logLevel: info
+startPort: 10001
+globalTTL: 0
+
+macros:
+  # --parallel 1 matters: the default 4 slots each get MTP draft + compute buffers and Swift 64K runs out of VRAM.
+  "server": >-
+    /home/YOU/llama.cpp/build-hip/bin/llama-server --host 127.0.0.1 --port ${PORT}
+    --gpu-layers 99 --fit off --flash-attn on --parallel 1 --threads 6 --jinja
+  "models": /home/YOU/models
+  "mtp2": --spec-type draft-mtp --spec-draft-n-max 2
+
+models:
+  # PLANNER + REVIEWER: Swift 1.5 27B IQ2_XS + MTP, all in VRAM. 64K q4_0 fits with a light desktop (Lubuntu: ~0.3 GB VRAM).
+  "swift27-xs-64k":
+    name: "Swift 1.5 27B IQ2_XS (64K q4_0, MTP n2)"
+    env: ["HSA_OVERRIDE_GFX_VERSION=10.3.0"]
+    cmd: >-
+      ${server} ${mtp2}
+      --model ${models}/ukisai/Swift-1.5-Qwen3.8-27B-GSQ-RCO-GGUF/Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ2_XS-mtp.gguf
+      --ctx-size 65536 --cache-type-k q4_0 --cache-type-v q4_0
+      --chat-template-kwargs "{\"reasoning_effort\":\"medium\"}"
+      --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0
+
+  # EXECUTOR: Ornith 1.5 9B Q8_0 + MTP, all in VRAM.
+  "ornith9b-q8":
+    name: "Ornith 1.5 9B Q8_0 (80K q8_0, MTP n2)"
+    env: ["HSA_OVERRIDE_GFX_VERSION=10.3.0"]
+    cmd: >-
+      ${server} ${mtp2}
+      --model ${models}/ornith-ai/Ornith-1.5-9B-GGUF/Ornith-1.5-9B-Q8_0.gguf
+      --ctx-size 81920 --cache-type-k q8_0 --cache-type-v q8_0
+      --no-webui --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0

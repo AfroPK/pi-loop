@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Unloads the model llama-swap is running (frees VRAM). llama-swap keeps listening; the next launcher loads one again.
+if curl -sf -m 60 -X POST "${PI_SWAP_URL:-http://127.0.0.1:8080}/api/models/unload" >/dev/null; then
+  echo "[pi-stop] model unloaded."; else echo "[pi-stop] llama-swap not running."; fi

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# One-shot planner/reviewer/executor: pi-plan writes PLAN.md non-interactively (medium), pi-review (fresh session,
+# medium) appends review corrections non-interactively, then pi-exec opens interactively (low) to carry it out.
+# Usage: pi-pe "task description"   or   pi-pe TASK.md   (a file is passed to the planner and to the reviewer)
+set -u
+D="$(dirname "$(readlink -f "$0")")"
+[ $# -ge 1 ] && [ -n "$1" ] || { echo 'Usage: pi-pe "task description"  or  pi-pe TASK.md'; exit 1; }
+# Keep the previous plan as PLAN.old.md so a stale PLAN.md is never executed
+[ -f PLAN.md ] && mv -f PLAN.md PLAN.old.md
+rm -rf PLAN.notes.md PLAN.files PLAN.rehearsal
+# A new task must not inherit slices left over from an older task
+[ -f PLAN.next.md ] && mv -f PLAN.next.md PLAN.next.old.md
+if [ -f "$1" ]; then cp -f "$1" PLAN.task.md; else printf '%s\n' "$1" > PLAN.task.md; fi
+"$D/pi-plan" -p "Plan the task described in PLAN.task.md (read it first)." || exit 1
+[ -f PLAN.md ] || { echo "Planner did not write PLAN.md - run pi-plan interactively to see why."; exit 1; }
+"$D/pi-review" PLAN.task.md -p || echo "Review failed - executing the unreviewed plan."
+exec "$D/pi-exec"

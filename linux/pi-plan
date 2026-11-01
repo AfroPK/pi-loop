@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# PLANNER: Swift 1.5 27B (llama-swap id swift27-xs-64k) at thinking medium. Writes PLAN.md, PLAN.notes.md,
+# PLAN.files/ (code written once) and PLAN.next.md (later slices). It may run bash for checks and a rehearsal in
+# PLAN.rehearsal/, but planner.md forbids changing project files.
+# Usage: pi-plan "task" [pi args]  |  pi-plan TASK.md  |  pi-plan  (no task: plan the next slice of PLAN.next.md)
+# Add -p to plan non-interactively. For big or vague tasks: pi-plan --thinking xhigh "task"
+set -u
+source "$(dirname "$(readlink -f "$0")")/_common.sh"
+MODEL_ID=swift27-xs-64k; PI_MODEL=qwen27/swift27-xs-64k
+# No task = no argument that is not a flag (or the value of --thinking/--model/--name). pi-pe passes -p "task".
+NEXTMODE=1; skip=0
+for a in "$@"; do
+  if [ $skip = 1 ]; then skip=0; continue; fi
+  case "$a" in --thinking|--model|--name) skip=1 ;; -*) ;; *) NEXTMODE=0; break ;; esac
+done
+if [ $NEXTMODE = 1 ]; then
+  [ -f PLAN.next.md ] || { echo 'No task given and no PLAN.next.md here. Usage: pi-plan "task"   or   pi-plan TASK.md'; exit 1; }
+  if [ -f PLAN.md ]; then
+    # Never overwrite a plan that still has open boxes
+    grep -q '^- \[ \]' PLAN.md && { echo "PLAN.md still has unticked items - run pi-exec to finish it first, or move it away."; exit 1; }
+    n=1; while [ -e "PLAN.done-$n.md" ]; do n=$((n+1)); done
+    mv -f PLAN.md "PLAN.done-$n.md"; echo "Archived the finished PLAN.md as PLAN.done-$n.md"
+  fi
+fi
+ensure_server "$MODEL_ID" || exit 1
+prompt_args planner.md || exit 1
+PI=(pi --model "$PI_MODEL" --thinking medium --no-skills --tools "read,grep,find,ls,write,edit,bash" "${P[@]}" --name plan)
+if [ $NEXTMODE = 1 ]; then
+  exec "${PI[@]}" "$@" "Plan the next slice: the FIRST '## Slice' section of PLAN.next.md is your whole task. Read it, then follow the planner rules. When PLAN.md is written, remove that section from PLAN.next.md with the edit tool (keep the other slices); if no slices are left, delete PLAN.next.md."
+fi
+exec "${PI[@]}" "$@"
