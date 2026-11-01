@@ -43,7 +43,13 @@ norm_next() { [ -f PLAN.next.md ] && sed -i -E 's/^#{1,4}[[:space:]]*(Slice\b)/#
 next_slice() { norm_next; grep -m1 '^## Slice' PLAN.next.md 2>/dev/null | sed 's/^## //'; }
 reviewed() { grep -q -e '^### REVIEW CORRECTIONS' -e '^Reviewed: no corrections' PLAN.md || [ -f PLAN.loop/plan-reviewed ]; }
 tries() { cat PLAN.loop/exec-tries 2>/dev/null || echo 0; }
-new_plan() { rm -f PLAN.loop/plan-reviewed PLAN.loop/exec-tries; }
+new_plan() { rm -f PLAN.loop/plan-reviewed PLAN.loop/exec-tries PLAN.loop/review-tries; }
+# Code is reviewed once PLAN.review.md has a verdict; a timed-out review ("VERDICT: NONE") is retried once.
+code_reviewed() {
+  [ -f PLAN.review.md ] || return 1
+  head -1 PLAN.review.md | grep -q '^VERDICT: NONE' || return 0
+  [ "$(cat PLAN.loop/review-tries 2>/dev/null || echo 0)" -ge 2 ]
+}
 
 if [ -n "$TASK" ]; then
   [ -f PLAN.md ] && mv -f PLAN.md PLAN.old.md
@@ -57,7 +63,7 @@ mkdir -p PLAN.loop
 done0=$(ls PLAN.done-*.md 2>/dev/null | wc -l); slice=$done0; planned=0; fixrounds=0
 while :; do
   open=$(open_boxes)
-  if [ ! -f PLAN.md ] || { [ "$open" = 0 ] && [ -f PLAN.review.md ]; }; then
+  if [ ! -f PLAN.md ] || { [ "$open" = 0 ] && code_reviewed; }; then
     # ---- plan: the task (fresh start) or the next slice; or finished
     nxt=$(next_slice)
     if [ ! -f PLAN.md ] && [ -n "$TASK" ] && [ $planned = 0 ]; then what="task: $(head -c 70 PLAN.task.md | tr '\n' ' ')"
@@ -67,7 +73,11 @@ while :; do
         stop "PLAN.next.md has text but no '## Slice' section - check it, then rerun pi-loop"
       fi
       [ -f PLAN.md ] || { echo 'Nothing to do: give a task (pi-loop "task"), or run it where PLAN.md or PLAN.next.md is.'; exit 1; }
-      hdr "DONE: all slices finished ($slice)"; exit 0
+      hdr "DONE: all slices finished ($(( $(ls PLAN.done-*.md 2>/dev/null | wc -l) + 1 )) done, last code review: $(head -1 PLAN.review.md 2>/dev/null))"
+      echo "Nothing is left in PLAN.next.md. To keep building on this code:"
+      echo "  pi-loop \"next feature or fix\"     new task, planned against the current code (old plans are kept)"
+      echo "  or add a '## Slice: <name>' section with its requirements to PLAN.next.md, then run pi-loop"
+      exit 0
     fi
     [ $planned -ge "$MAX_SLICES" ] && stop "slice limit ($MAX_SLICES) reached; next: $nxt"
     case "$what" in "Slice: fixes from code review"*) fixrounds=$((fixrounds + 1)) ;; *) fixrounds=0 ;; esac
@@ -105,7 +115,8 @@ while :; do
   else
     # ---- code review of the finished slice
     [ $planned = 0 ] && slice=$((slice + 1)) && planned=1
-    hdr "slice $slice: code review"
+    t=$(cat PLAN.loop/review-tries 2>/dev/null || echo 0); echo $((t + 1)) > PLAN.loop/review-tries
+    [ "$t" -gt 0 ] && hdr "slice $slice: code review (retry: the last one ended without a verdict)" || hdr "slice $slice: code review"
     "$D/pi-code-review" -p || echo "[pi-loop] code review failed or timed out"
     echo "[pi-loop] $(head -1 PLAN.review.md 2>/dev/null)"
   fi
