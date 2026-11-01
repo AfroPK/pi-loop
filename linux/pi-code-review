@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# CODE REVIEWER: a fresh Swift 27B session (thinking medium) reviews the code pi-exec produced for PLAN.md.
+# Diffs against PLAN.base/ (the snapshot pi-exec takes), proves each bug with a script, writes PLAN.review.md and,
+# for proven findings, a "## Slice: fixes from code review" at the top of PLAN.next.md for pi-plan to build.
+# It never edits project code. Usage: pi-code-review [pi args]   (add -p to run non-interactively)
+set -u
+source "$(dirname "$(readlink -f "$0")")/_common.sh"
+MODEL_ID=swift27-xs-64k; PI_MODEL=qwen27/swift27-xs-64k
+[ -f PLAN.md ] || { echo "No PLAN.md in $PWD - nothing to review."; exit 1; }
+[ -d PLAN.base ] || echo "[pi-local] No PLAN.base/ snapshot - reviewing the whole project."
+ensure_server "$MODEL_ID" || exit 1
+rm -rf PLAN.review.files   # a new review starts clean; its proof scripts replace the old ones
+prompt_args code-reviewer.md || exit 1
+exec pi --model "$PI_MODEL" --thinking medium --no-skills --tools "read,grep,find,ls,write,edit,bash" "${P[@]}" --name code-review "$@" "Review the code the executor produced for PLAN.md now."

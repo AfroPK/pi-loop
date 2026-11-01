@@ -7,6 +7,10 @@ set -u
 source "$(dirname "$(readlink -f "$0")")/_common.sh"
 MODEL_ID=ornith9b-q8; PI_MODEL=ornith/ornith9b-q8
 [ -f PLAN.md ] || { echo "No PLAN.md in $PWD - run pi-plan \"task\" here first."; exit 1; }
+# Snapshot the project once per plan so pi-code-review can diff what this plan changed (a rerun keeps the first one)
+if [ ! -d PLAN.base ]; then
+  mkdir PLAN.base && tar --exclude='./PLAN.*' --exclude=./.git --exclude=./node_modules --exclude=./logs -cf - . | (cd PLAN.base && tar xf -)
+fi
 ensure_server "$MODEL_ID" || exit 1
 prompt_args executor.md || exit 1
 exec pi --model "$PI_MODEL" --thinking low --no-skills "${P[@]}" --name exec @PLAN.md "Execute PLAN.md now, step by step." "$@"

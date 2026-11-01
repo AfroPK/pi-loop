@@ -12,7 +12,9 @@ coder model carries it out step by step. Both models fit **fully in VRAM**, and 
    │
    ├─ pi-plan    Swift 1.5 27B (IQ2_XS + MTP, 48K ctx)  thinking medium  → PLAN.md, PLAN.files/, PLAN.notes.md
    ├─ pi-review  Swift 1.5 27B, fresh session            thinking medium  → appends ### REVIEW CORRECTIONS
-   └─ pi-exec    Ornith 1.5 9B (Q8_0 + MTP, 80K ctx)     thinking low     → edits code, ticks boxes, runs Verify
+   ├─ pi-exec    Ornith 1.5 9B (Q8_0 + MTP, 80K ctx)     thinking low     → edits code, ticks boxes, runs Verify
+   └─ pi-code-review  Swift 1.5 27B, fresh session      thinking medium  → PLAN.review.md; proven bugs become a fix slice
+                 (Linux launchers so far) at the top of PLAN.next.md, which the next `pi-plan` picks up
                  ▲ llama-swap swaps models (~35–40 s) — only one fits in 12 GB at a time
 ```
 
@@ -73,7 +75,8 @@ Or run each step yourself, so you can read the plan before anything changes:
 ```bat
 pi-plan "task"      &REM writes PLAN.md (add -p for no UI)
 pi-review           &REM appends corrections
-pi-exec             &REM carries it out
+pi-exec             &REM carries it out (snapshots the project to PLAN.base/ first)
+pi-code-review      &REM Linux: reviews what pi-exec changed; proven bugs -> PLAN.review.md + fix slice in PLAN.next.md
 pi-plan             &REM no task = plan the next slice from PLAN.next.md
 pi-stop             &REM unload the model, free VRAM
 ```

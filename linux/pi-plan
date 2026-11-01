@@ -20,6 +20,8 @@ if [ $NEXTMODE = 1 ]; then
     grep -q '^- \[ \]' PLAN.md && { echo "PLAN.md still has unticked items - run pi-exec to finish it first, or move it away."; exit 1; }
     n=1; while [ -e "PLAN.done-$n.md" ]; do n=$((n+1)); done
     mv -f PLAN.md "PLAN.done-$n.md"; echo "Archived the finished PLAN.md as PLAN.done-$n.md"
+    [ -f PLAN.review.md ] && mv -f PLAN.review.md "PLAN.review.done-$n.md"
+    rm -rf PLAN.base
   fi
 fi
 ensure_server "$MODEL_ID" || exit 1
