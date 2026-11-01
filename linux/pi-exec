@@ -5,7 +5,7 @@
 # Coming from the planner costs one llama-swap model swap.
 set -u
 source "$(dirname "$(readlink -f "$0")")/_common.sh"
-MODEL_ID=ornith9b-q8; PI_MODEL=ornith/ornith9b-q8
+MODEL_ID=${PI_EXEC_SWAP_ID:-ornith9b-q8}; PI_MODEL=${PI_EXEC_MODEL:-ornith/ornith9b-q8}   # per-machine override: ~/.config/pi-local/env
 [ -f PLAN.md ] || { echo "No PLAN.md in $PWD - run pi-plan \"task\" here first."; exit 1; }
 # Snapshot the project once per plan so pi-code-review can diff what this plan changed (a rerun keeps the first one)
 if [ ! -d PLAN.base ]; then

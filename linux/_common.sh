@@ -7,6 +7,7 @@
 #   PI_PLAN_MODEL=strata/qwen3.8-flash-next-gyro-s     # Pi provider/id for pi-plan ...
 #   PI_PLAN_SWAP_ID=qwen3.8-flash-next-gyro-s          # ... and the llama-swap id that serves it
 #   PI_REVIEW_MODEL=... PI_REVIEW_SWAP_ID=...          # the same for pi-review and pi-code-review
+#   PI_EXEC_MODEL=... PI_EXEC_SWAP_ID=...              # the same for pi-exec
 _here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 [ -f "${PI_LOCAL_ENV:-$HOME/.config/pi-local/env}" ] && source "${PI_LOCAL_ENV:-$HOME/.config/pi-local/env}"
 # Prompts: $PI_PROMPTS, else next to the launchers (installed layout), else ../prompts (running from the repo).
