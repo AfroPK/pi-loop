@@ -26,6 +26,11 @@ FEED = re.compile(r"^\s*\d+:\d\d \[([^\]]+)\] (.*)$")
 
 def on_line(raw):
     s = raw.rstrip("\n")
+    if s.startswith("\x1elive "):                                 # live rate from pi-feed (not shown in the feed)
+        p = s.split()
+        if len(p) >= 5:
+            state["live"] = (p[2], float(p[3]), int(p[4]), time.time(), p[1])
+        return
     m = HDR.search(s)
     if m:
         title = m.group(1)
@@ -49,7 +54,7 @@ def on_line(raw):
         lines.append(s)
 
 proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-                        start_new_session=True, env=dict(os.environ, PYTHONUNBUFFERED="1", NO_COLOR="1"))
+                        start_new_session=True, env=dict(os.environ, PYTHONUNBUFFERED="1", NO_COLOR="1", PI_FEED_LIVE="1"))
 def reader():
     for raw in proc.stdout:
         on_line(raw)
@@ -148,8 +153,16 @@ def main(scr):
             sw = min(max(34, W // 3), 60)                      # side panel width
             fw = W - sw - 3                                     # feed width
             el = time.time() - state["t0"]
-            parts = ["pi-loop", f"slice {state['slice']}", state["stage"], side["model"],
-                     f"⚡ {state['tps'] or '-'} tok/s", side["vram"],
+            lv = state.get("live")
+            if lv and time.time() - lv[3] < 3 and (lv[0] == "gen" or lv[0].startswith("call:")):
+                speed = f"⚡ {lv[1]:5.1f} tok/s · {lv[2]} tok" + (f" · writing {lv[0][5:]} call" if lv[0].startswith("call:") else "")
+            elif lv and time.time() - lv[3] < 600 and lv[0] == "prompt":
+                speed = "⚡ reading prompt…"
+            elif lv and time.time() - lv[3] < 600 and lv[0] == "tool":
+                speed = "⚡ running a tool…"
+            else:
+                speed = f"⚡ last {state['tps'] or '-'} tok/s"
+            parts = ["pi-loop", f"slice {state['slice']}", state["stage"], side["model"], speed, side["vram"],
                      f"{int(el // 3600)}:{int(el // 60 % 60):02d}:{int(el % 60):02d}"]
             top = " " + " │ ".join(p for p in parts if p) + " "
             scr.attron(curses.A_REVERSE); scr.addstr(0, 0, clip(top.ljust(W), W - 1)); scr.attroff(curses.A_REVERSE)

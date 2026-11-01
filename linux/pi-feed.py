@@ -73,6 +73,15 @@ def describe(tool, args):
 thinking = out_tokens = tools = 0
 turn_start = first_tok = None      # per model reply: when it was requested, when its first token arrived
 gen_time = 0.0                     # total seconds spent generating (for the average tok/s)
+# Live rate for pi-loop-tui (PI_FEED_LIVE=1): streamed pieces per second, scaled by this agent's measured
+# tokens-per-piece ratio (exact counts arrive only at the end of each reply), sent as hidden \x1e lines.
+LIVE = os.environ.get("PI_FEED_LIVE") == "1"
+pieces = 0; all_pieces = 0; last_live = 0.0
+# A long tool call (a big file being written) streams for minutes before the tool runs: say so after 3 s.
+composing = None   # [tool name, start time, pieces at start, last report time]
+def live(kind, rate=0.0, toks=0):
+    try: print(f"\x1elive {label} {kind} {rate:.1f} {toks}", flush=True)
+    except (BrokenPipeError, OSError): pass
 last_text = ""
 starts = {}
 for line in sys.stdin:
@@ -83,15 +92,36 @@ for line in sys.stdin:
         t = e.get("type")
         if t == "turn_start":
             turn_start, first_tok = time.time(), None
+            pieces = 0
+            if LIVE: live("prompt")
         if t == "message_update":
             if first_tok is None: first_tok = time.time()
             ev = e.get("assistantMessageEvent") or {}
+            et2 = ev.get("type", "")
+            if et2 == "toolcall_start":
+                composing = [ev.get("toolName", "tool"), time.time(), pieces, 0.0]
+            elif et2 == "toolcall_end":
+                composing = None
+            if composing and time.time() - composing[1] > 3 and time.time() - composing[3] > 20:
+                ratio = out_tokens / all_pieces if all_pieces and out_tokens else 1.12
+                n_so_far = int((pieces - composing[2]) * ratio)
+                flush("thinking"); flush("text")
+                say(c("dim", f"✍️  {'still writing the' if composing[3] else 'writing a'} {composing[0]} call… ({n_so_far} tok{' so far' if not composing[3] else ''})"))
+                composing[3] = time.time()
+            if str(et2).endswith("_delta"):
+                pieces += 1
+                if LIVE and time.time() - last_live >= 0.5:
+                    last_live = time.time()
+                    ratio = out_tokens / all_pieces if all_pieces and out_tokens else 1.12
+                    toks = pieces * ratio
+                    live("call:" + composing[0] if composing else "gen", toks / max(time.time() - first_tok, 0.2), int(toks))
             et = ev.get("type")
             if et == "thinking_delta": thinking += len(ev.get("delta", "")); feed("thinking", ev.get("delta", ""))
             elif et == "thinking_end": flush("thinking")
             elif et == "text_delta": feed("text", ev.get("delta", ""))
             elif et == "text_end": flush("text")
         elif t == "tool_execution_start":
+            if LIVE: live("tool")
             flush("thinking"); flush("text")
             tools += 1; starts[e.get("toolCallId")] = time.time()
             tn = e.get('toolName')
@@ -110,6 +140,7 @@ for line in sys.stdin:
             m = e.get("message") or {}
             n = (m.get("usage") or {}).get("output", 0)
             out_tokens += n
+            all_pieces += pieces
             if n and first_tok:
                 g = max(time.time() - first_tok, 1e-3); gen_time += g
                 pre = f"  prompt {first_tok - turn_start:4.1f}s" if turn_start else ""
