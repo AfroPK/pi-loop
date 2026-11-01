@@ -51,8 +51,20 @@ def one_line(s, n=90):
     s = " ".join(str(s).split())
     return s if len(s) <= n else s[: n - 1] + "…"
 
+ICON = {"bash": "💻", "read": "📖", "write": "📝", "edit": "✏️ ", "grep": "🔍", "find": "🔎", "ls": "📂",
+        "firecrawl_search": "🌐", "firecrawl_scrape": "🕸️ "}
+def icon(tool): return ICON.get(tool, "🔧")
+
+CWD = os.getcwd().rstrip("/")
+def rel(x):
+    """Show project paths relative to the project folder, and drop a leading 'cd <project> &&'."""
+    x = str(x)
+    for pre in (f"cd {CWD} && ", f"cd {CWD}; ", f"cd {CWD}\n"):
+        if x.startswith(pre): x = x[len(pre):]
+    return x.replace(CWD + "/", "").replace(CWD, ".")
+
 def describe(tool, args):
-    a = args or {}
+    a = {k: rel(v) if isinstance(v, str) else v for k, v in (args or {}).items()}
     if tool == "bash": return one_line(a.get("command", ""), 80)
     if tool in ("read", "write", "edit"): return a.get("path") or a.get("file_path") or ""
     if tool in ("grep", "find", "ls"): return one_line(" ".join(str(v) for v in a.values()), 80)
@@ -77,7 +89,8 @@ for line in sys.stdin:
         elif t == "tool_execution_start":
             flush("thinking"); flush("text")
             tools += 1; starts[e.get("toolCallId")] = time.time()
-            say(f"▸ {e.get('toolName')}  {describe(e.get('toolName'), e.get('args'))}")
+            tn = e.get('toolName')
+            say(f"{icon(tn)} {tn}  {describe(tn, e.get('args'))}")
         elif t == "tool_execution_end":
             dur = time.time() - starts.pop(e.get("toolCallId"), time.time())
             res = e.get("result") or {}
@@ -86,7 +99,7 @@ for line in sys.stdin:
             bad = e.get("isError") or (sc.get("exit_code") not in (None, 0))
             out = "".join(x.get("text", "") for x in (res.get("content") or []) if isinstance(x, dict)) if isinstance(res, dict) else str(res)
             tail = one_line(out.strip().splitlines()[-1] if out.strip() else "", 70)
-            mark = c("red", "✗") if bad else c("grn", "✓")
+            mark = "❌" if bad else "✅"
             if bad or e.get("toolName") == "bash": say(f"  {mark} {dur:4.1f}s  {c('dim', tail)}")
         elif t == "turn_end":
             m = e.get("message") or {}
