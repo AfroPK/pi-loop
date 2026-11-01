@@ -5,7 +5,7 @@
 # It never edits project code. Usage: pi-code-review [pi args]  (-p: non-interactive, limit PI_CODE_REVIEW_TIMEOUT 480 s)
 set -u
 source "$(dirname "$(readlink -f "$0")")/_common.sh"
-MODEL_ID=swift27-xs-64k; PI_MODEL=qwen27/swift27-xs-64k
+MODEL_ID=swift27-xs-64k; PI_MODEL=${PI_REVIEW_MODEL:-qwen27-review/swift27-xs-64k}   # thinking capped per reply (thinkingBudgets.low)
 [ -f PLAN.md ] || { echo "No PLAN.md in $PWD - nothing to review."; exit 1; }
 [ -d PLAN.base ] || echo "[pi-local] No PLAN.base/ snapshot - reviewing the whole project."
 ensure_server "$MODEL_ID" || exit 1

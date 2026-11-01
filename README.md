@@ -148,8 +148,9 @@ command and error path correct.
 
 The feed streams each agent's thinking (dim, `💭`) and replies (`│`) as they arrive, with an emoji per tool (💻 bash, 📖 read, 📝 write, ✏️ edit, 🔍 grep, 🔎 find, 📂 ls, 🌐 search) and ✅/❌ results; `PI_FEED_THINKING=short` shows only the first line of each thought, `off` hides it. Full sessions are saved in `PLAN.loop/*.jsonl`. It stops and says why when exec leaves open boxes or Blockers, the
 planner or executor hits its time limit, the code review keeps finding bugs (`--max-fix-rounds`, default 2), or the
-slice cap is reached (`--max-slices`, default 6). The reviewers are kept short on purpose: thinking `low`, a ~10
-tool-call budget in the prompt, and hard limits (`PI_REVIEW_TIMEOUT`=360 s, `PI_CODE_REVIEW_TIMEOUT`=480 s;
+slice cap is reached (`--max-slices`, default 6). The reviewers are kept short on purpose: thinking `low`, capped at 1536 thinking tokens per reply
+(Pi provider `qwen27-review` sends llama.cpp's `thinking_budget_tokens` from `thinkingBudgets.low`; the planner is
+not capped), a ~10 tool-call budget in the prompt, and hard limits (`PI_REVIEW_TIMEOUT`=360 s, `PI_CODE_REVIEW_TIMEOUT`=480 s;
 `PI_PLAN_TIMEOUT` / `PI_EXEC_TIMEOUT`=1800 s). They end with `PLAN REVIEW: PASS|FIXED n` and
 `VERDICT: PASS|FAIL n` (first line of PLAN.review.md).
 

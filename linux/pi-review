@@ -4,7 +4,7 @@
 # Usage: pi-review [TASK-file] [pi args]   (-p: non-interactive, time limit PI_REVIEW_TIMEOUT, default 360 s)
 set -u
 source "$(dirname "$(readlink -f "$0")")/_common.sh"
-MODEL_ID=swift27-xs-64k; PI_MODEL=qwen27/swift27-xs-64k
+MODEL_ID=swift27-xs-64k; PI_MODEL=${PI_REVIEW_MODEL:-qwen27-review/swift27-xs-64k}   # thinking capped per reply (thinkingBudgets.low)
 [ -f PLAN.md ] || { echo "No PLAN.md in $PWD - run pi-plan first."; exit 1; }
 ensure_server "$MODEL_ID" || exit 1
 TASKARG="Review PLAN.md now."
