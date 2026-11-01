@@ -5,7 +5,7 @@
   "defaultProvider": "qwen27",
   "defaultModel": "swift27-xs-64k",
   "enabledModels": [
-    "swift27-xs-64k",
+    "qwen27/swift27-xs-64k",
     "ornith9b-q8"
   ],
   "compaction": {
