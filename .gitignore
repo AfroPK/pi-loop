@@ -1,3 +1,4 @@
 PLAN.*
 logs/
 prompts/environment.md
+__pycache__/
