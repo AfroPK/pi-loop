@@ -91,11 +91,16 @@ while :; do
     slice=$((slice + 1)); planned=$((planned + 1)); new_plan
     hdr "slice $slice: plan  ($what)"
     if [ ! -f PLAN.md ] && [ -n "$TASK" ] && [ $planned = 1 ]; then
-      "$D/pi-plan" -p "Plan the task described in PLAN.task.md (read it first)." || stop "planner failed or hit its time limit"
+      PLAN_ARGS=(-p "Plan the task described in PLAN.task.md (read it first). Plan only its first slice if it lists several.")
     else
-      "$D/pi-plan" -p || stop "planner failed or hit its time limit"
+      PLAN_ARGS=(-p)                                   # the next slice of PLAN.next.md
     fi
-    [ "$(open_boxes)" -gt 0 ] || stop "planner did not write a PLAN.md with steps"
+    "$D/pi-plan" "${PLAN_ARGS[@]}" || stop "planner failed or hit its time limit"
+    if [ "$(open_boxes)" = 0 ]; then   # one retry: a planner reply can run out of output tokens while still thinking
+      hdr "slice $slice: plan again (the planner ended without a PLAN.md)"
+      "$D/pi-plan" "${PLAN_ARGS[@]}" || true          # the same call again (a fresh session)
+      [ "$(open_boxes)" -gt 0 ] || stop "planner did not write a PLAN.md with steps (twice)"
+    fi
   elif [ "$open" -gt 0 ] && ! reviewed; then
     # ---- plan review (once per plan; a failure or timeout is not fatal)
     [ $planned = 0 ] && slice=$((slice + 1)) && planned=1
