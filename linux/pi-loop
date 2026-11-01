@@ -3,17 +3,18 @@
 # Every agent runs non-interactively with a live one-line-per-action feed; full sessions go to PLAN.loop/*.jsonl.
 # Usage: pi-loop "task" | pi-loop TASK.md     start a new task (like pi-pe)
 #        pi-loop                              continue wherever the files say (resumes after a stop or Ctrl-C)
-# Options: --max-slices N (default 6)   --max-fix-rounds N (default 2)   --tmux (feed + status side by side)
+# Options: --max-slices N (default 6)   --max-fix-rounds N (default 2)   --tui (full-screen view)   --tmux (feed + status side by side)
 # Stops (and tells you why) when exec leaves open boxes or Blockers, a time limit hits the planner or executor,
 # or the same work keeps producing fix slices.
 set -u
 D="$(dirname "$(readlink -f "$0")")"
-MAX_SLICES=6; MAX_FIX=2; TMUX_MODE=; TASK=
+MAX_SLICES=6; MAX_FIX=2; TMUX_MODE=; TASK=; ORIG=("$@")
 while [ $# -gt 0 ]; do
   case "$1" in
     --max-slices) MAX_SLICES=$2; shift 2 ;;
     --max-fix-rounds) MAX_FIX=$2; shift 2 ;;
     --tmux) TMUX_MODE=1; shift ;;
+    --tui) exec "$D/pi-loop-tui" "${ORIG[@]}" ;;   # full-screen view (pi-loop-tui runs pi-loop with the other args)
     -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
     *) TASK=$1; shift ;;
   esac

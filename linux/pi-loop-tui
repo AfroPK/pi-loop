@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""pi-loop-tui [pi-loop args]: full-screen view of a pi-loop run (curses, no extra packages).
+
+Left: the live agent feed (thinking, tool calls, results, tok/s), scrollable. Right: the plan's boxes, review
+verdicts, queued slices and stage times, read from the PLAN.* files. Top: slice, stage, model, tok/s, VRAM, time.
+Keys: q quit (stops the loop; plain pi-loop resumes it), t thinking full/short/off, arrows/PgUp/PgDn scroll,
+End or f follow the newest lines.  --cmd "..." runs another command instead of pi-loop (for testing)."""
+import curses, glob, json, locale, os, re, signal, subprocess, sys, threading, time, unicodedata, urllib.request
+
+locale.setlocale(locale.LC_ALL, "")
+HERE = os.path.dirname(os.path.realpath(__file__))
+SWAP = os.environ.get("PI_SWAP_URL", "http://127.0.0.1:8080")
+
+args = sys.argv[1:]
+if args[:1] == ["--cmd"]:
+    cmd = ["/bin/sh", "-c", args[1]]
+else:
+    cmd = [os.path.join(HERE, "pi-loop")] + [a for a in args if a != "--tui"]
+
+# ---------------------------------------------------------------- child process and its output
+lines, lock = [], threading.Lock()
+state = {"slice": "-", "stage": "starting", "label": "", "tps": "", "t0": time.time(), "done": None,
+         "stages": [], "stage_t": time.time()}
+HDR = re.compile(r"══ (.*?)\s+\(total (\d+)m(\d+)s\)")
+FEED = re.compile(r"^\s*\d+:\d\d \[([^\]]+)\] (.*)$")
+
+def on_line(raw):
+    s = raw.rstrip("\n")
+    m = HDR.search(s)
+    if m:
+        title = m.group(1)
+        now = time.time()
+        if state["stages"] and state["stages"][-1][2] is None:          # close the previous stage
+            state["stages"][-1][2] = now - state["stage_t"]
+        sm = re.match(r"slice (\d+): (\S+(?: \S+)?)", title)
+        if sm:
+            state["slice"], state["stage"] = sm.group(1), sm.group(2).split("  ")[0]
+            state["stages"].append([state["slice"], state["stage"], None])
+            state["stage_t"] = now
+        elif title.startswith(("DONE", "STOPPED")):
+            state["stage"] = title.split(":")[0].lower()
+            state["done"] = title
+    f = FEED.match(s)
+    if f:
+        state["label"] = f.group(1)
+        t = re.search(r"⚡\s*([\d.]+) tok/s", f.group(2))
+        if t: state["tps"] = t.group(1)
+    with lock:
+        lines.append(s)
+
+proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+                        start_new_session=True, env=dict(os.environ, PYTHONUNBUFFERED="1", NO_COLOR="1"))
+def reader():
+    for raw in proc.stdout:
+        on_line(raw)
+    rc = proc.wait()
+    if state["stages"] and state["stages"][-1][2] is None:
+        state["stages"][-1][2] = time.time() - state["stage_t"]
+    with lock:
+        lines.append(f"── pi-loop exited ({rc}) - press q to close ──")
+    state["exited"] = rc
+threading.Thread(target=reader, daemon=True).start()
+
+# ---------------------------------------------------------------- side panel data (refreshed every second)
+side = {"plan": [], "model": "", "vram": "", "t": 0}
+def read(p):
+    try: return open(p, encoding="utf-8", errors="replace").read()
+    except OSError: return ""
+def refresh_side():
+    if time.time() - side["t"] < 1: return
+    side["t"] = time.time()
+    out = []
+    plan = read("PLAN.md")
+    if plan:
+        title = (plan.splitlines() or [""])[0].lstrip("# ").replace("Plan: ", "")
+        out.append(("h", "PLAN  " + title))
+        boxes = re.findall(r"^- \[([ xX])\] (.*)$", plan, re.M)
+        done = sum(1 for b, _ in boxes if b != " ")
+        out.append(("d", f"{done}/{len(boxes)} boxes done"))
+        for b, txt in boxes:
+            out.append(("ok" if b != " " else "todo", ("✔ " if b != " " else "☐ ") + txt))
+        if "### REVIEW CORRECTIONS" in plan: out.append(("y", "plan review: corrections added"))
+        elif "Reviewed: no corrections" in plan: out.append(("ok", "plan review: no corrections"))
+        blk = re.search(r"^## Blockers\n(.*?)(?=^## |\Z)", plan, re.M | re.S)
+        if blk and re.sub(r"(?i)\(?none\)?|n/a|<!--.*?-->|\s", "", blk.group(1)):
+            out.append(("r", "BLOCKERS: " + blk.group(1).strip().splitlines()[0]))
+    rv = (read("PLAN.review.md").splitlines() or [""])[0]
+    if rv: out.append(("r" if "FAIL" in rv else "ok" if "PASS" in rv else "d", "code review: " + rv))
+    nxt = re.findall(r"^#{1,4} *Slice:? *(.*)$", read("PLAN.next.md"), re.M)
+    if nxt:
+        out.append(("h", "QUEUED SLICES"))
+        out += [("d", "· " + n) for n in nxt]
+    done = sorted(glob.glob("PLAN.done-*.md"))
+    if done: out.append(("d", f"{len(done)} slice(s) finished before"))
+    if state["stages"]:
+        out.append(("h", "STAGES"))
+        for sl, st, dur in state["stages"][-10:]:
+            d = time.time() - state["stage_t"] if dur is None else dur
+            out.append(("ok" if dur is not None else "y", f"{sl}: {st:<12} {int(d // 60)}m{int(d % 60):02d}s {'✔' if dur is not None else '…'}"))
+    side["plan"] = out
+    try:
+        r = json.load(urllib.request.urlopen(f"{SWAP}/running", timeout=1))
+        side["model"] = ", ".join(m["model"] for m in r.get("running", [])) or "no model loaded"
+    except Exception:
+        side["model"] = "llama-swap ?"
+    v = glob.glob("/sys/class/drm/card*/device/mem_info_vram_used")
+    side["vram"] = f"VRAM {int(open(v[0]).read()) / 2**30:.1f} GB" if v else ""
+
+# ---------------------------------------------------------------- drawing
+def width(s):
+    return sum(2 if unicodedata.east_asian_width(ch) in "WF" else 0 if unicodedata.combining(ch) else 1 for ch in s)
+def clip(s, w):
+    out, n = "", 0
+    for ch in s:
+        cw = 2 if unicodedata.east_asian_width(ch) in "WF" else 0 if unicodedata.combining(ch) else 1
+        if n + cw > w: break
+        out += ch; n += cw
+    return out
+def wrap(s, w):
+    if w <= 4: return [clip(s, w)]
+    res, cur, n = [], "", 0
+    for ch in s:
+        cw = 2 if unicodedata.east_asian_width(ch) in "WF" else 1
+        if n + cw > w:
+            res.append(cur); cur, n = "      " + ch, 6 + cw
+        else:
+            cur += ch; n += cw
+    res.append(cur)
+    return res
+
+THINK = ["full", "short", "off"]
+def main(scr):
+    curses.curs_set(0); scr.nodelay(True); scr.timeout(200)
+    curses.start_color(); curses.use_default_colors()
+    for i, c in enumerate([curses.COLOR_CYAN, curses.COLOR_GREEN, curses.COLOR_RED, curses.COLOR_YELLOW,
+                           curses.COLOR_MAGENTA, curses.COLOR_BLUE], 1):
+        curses.init_pair(i, c, -1)
+    CY, GR, RD, YL, MG, BL = (curses.color_pair(i) for i in range(1, 7))
+    DIM = curses.A_DIM
+    think, scroll, follow, quitting = 0, 0, True, False
+    while True:
+        refresh_side()
+        H, W = scr.getmaxyx()
+        scr.erase()
+        if H < 10 or W < 50:
+            scr.addstr(0, 0, clip("window too small for pi-loop-tui", W - 1)); scr.refresh()
+        else:
+            sw = min(max(34, W // 3), 60)                      # side panel width
+            fw = W - sw - 3                                     # feed width
+            el = time.time() - state["t0"]
+            parts = ["pi-loop", f"slice {state['slice']}", state["stage"], side["model"],
+                     f"⚡ {state['tps'] or '-'} tok/s", side["vram"],
+                     f"{int(el // 3600)}:{int(el // 60 % 60):02d}:{int(el % 60):02d}"]
+            top = " " + " │ ".join(p for p in parts if p) + " "
+            scr.attron(curses.A_REVERSE); scr.addstr(0, 0, clip(top.ljust(W), W - 1)); scr.attroff(curses.A_REVERSE)
+            # feed: wrap the visible tail
+            with lock:
+                src = list(lines)
+            mode = THINK[think]
+            shown, last_think = [], None
+            for s in src:
+                f = FEED.match(s)
+                if f and f.group(2).startswith("💭"):
+                    if mode == "off": continue
+                    if mode == "short":
+                        if last_think == f.group(1): continue
+                        last_think = f.group(1)
+                else:
+                    last_think = None
+                shown.append(s)
+            rows = []
+            for s in shown[-2000:]:
+                for part in wrap(s, fw):
+                    rows.append((s, part))
+            view = H - 2
+            if follow: scroll = 0
+            scroll = max(0, min(scroll, max(0, len(rows) - view)))
+            vis = rows[max(0, len(rows) - view - scroll): len(rows) - scroll]
+            for i, (s, part) in enumerate(vis):
+                attr = 0
+                if "══" in s: attr = curses.A_BOLD | (RD if "STOPPED" in s else GR if "DONE" in s else CY)
+                elif "💭" in s: attr = DIM
+                elif "❌" in s: attr = RD
+                elif "✅" in s: attr = GR
+                elif "⚡" in s: attr = YL
+                elif "│ " in s: attr = curses.A_BOLD
+                try: scr.addstr(1 + i, 1, clip(part, fw), attr)
+                except curses.error: pass
+            # divider + side panel
+            for y in range(1, H - 1):
+                try: scr.addstr(y, fw + 2, "│", DIM)
+                except curses.error: pass
+            y = 1
+            for kind, txt in side["plan"]:
+                attr = {"h": curses.A_BOLD | CY, "ok": GR, "todo": 0, "y": YL, "r": RD | curses.A_BOLD, "d": DIM}[kind]
+                for part in wrap(txt, sw - 2)[:3 if kind == "todo" else 2]:
+                    if y >= H - 1: break
+                    try: scr.addstr(y, fw + 4, clip(part, sw - 2), attr)
+                    except curses.error: pass
+                    y += 1
+                if kind == "h" and y < H - 1: pass
+            bottom = (f" q quit · t thinking: {mode} · ↑↓ PgUp PgDn scroll · End/f follow"
+                      f"{'' if follow else '  (paused: End to follow)'} ")
+            if quitting: bottom = " stop the loop? y = stop (resume later with: pi-loop) · any other key = keep running "
+            scr.attron(curses.A_REVERSE); scr.addstr(H - 1, 0, clip(bottom.ljust(W), W - 1)); scr.attroff(curses.A_REVERSE)
+            scr.refresh()
+        k = scr.getch()
+        if k == -1: continue
+        if quitting:
+            if k in (ord("y"), ord("Y")):
+                break
+            quitting = False; continue
+        if k in (ord("q"), ord("Q")):
+            if "exited" in state: break
+            quitting = True
+        elif k in (ord("t"), ord("T")): think = (think + 1) % 3
+        elif k == curses.KEY_UP: scroll += 1; follow = False
+        elif k == curses.KEY_DOWN: scroll = max(0, scroll - 1); follow = scroll == 0
+        elif k == curses.KEY_PPAGE: scroll += max(1, scr.getmaxyx()[0] - 4); follow = False
+        elif k == curses.KEY_NPAGE: scroll = max(0, scroll - max(1, scr.getmaxyx()[0] - 4)); follow = scroll == 0
+        elif k in (curses.KEY_END, ord("f"), ord("F")): follow = True
+
+try:
+    curses.wrapper(main)
+finally:
+    if proc.poll() is None:                                      # stop pi-loop and its agents cleanly
+        try:
+            os.killpg(proc.pid, signal.SIGINT)
+            proc.wait(20)
+        except Exception:
+            try: os.killpg(proc.pid, signal.SIGKILL)
+            except Exception: pass
+    with lock:
+        tail = lines[-3:]
+    for l in tail: print(l)
+    if "exited" not in state: print("pi-loop stopped. Resume with: pi-loop")

@@ -126,7 +126,8 @@ set that model's `contextWindow` to 163840 in models.json. Download `Ornith-1.5-
 
 ```bash
 pi-loop "task"          # or pi-loop TASK.md; plain pi-loop resumes wherever the files say
-pi-loop --tmux "task"   # live feed on the left, status pane (stage, model, VRAM, boxes, queued slices) on the right
+pi-loop --tui "task"    # full-screen view: live feed, plan boxes, verdicts, queued slices, stage times, tok/s
+pi-loop --tmux "task"   # the same feed in tmux with a status pane
 ```
 
 Per slice: `pi-plan -p` -> `pi-review -p` -> `pi-exec -p` -> `pi-code-review -p`, then the next `## Slice` of
@@ -164,7 +165,7 @@ Per-machine settings (extra tools, a remote llama-swap) go in `~/.config/pi-loca
 
 | Path | What |
 |---|---|
-| `linux/` | bash launchers (incl. `pi-code-review`, `pi-loop`, `pi-feed.py`), Linux `environment.example.md`, llama-swap config + systemd user unit |
+| `linux/` | bash launchers (incl. `pi-code-review`, `pi-loop`, `pi-loop-tui`, `pi-feed.py`), Linux `environment.example.md`, llama-swap config + systemd user unit |
 | `launchers/` | Windows: `pi-plan`, `pi-review`, `pi-exec`, `pi-pe`, `pi-stop`, plus `ensure-server.ps1` (starts llama-swap and loads a model by id) |
 | `prompts/` | `planner.md`, `reviewer.md`, `executor.md`, `code-reviewer.md` (role rules), `environment.example.md` (your machine's facts), `local-session.md` |
 | `llama-swap/` | `config.yaml` with both models' tuned llama-server flags |
