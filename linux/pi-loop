@@ -36,7 +36,8 @@ hdr() { local e=$(( $(date +%s) - T0 )); printf '\n%s══ %s  (total %dm%02ds)
 open_boxes() { grep -c '^- \[ \]' PLAN.md 2>/dev/null || true; }
 # Real blockers only: models often write "(none)", "None.", "- n/a" under the heading
 blockers() { awk '/^## Blockers/{f=1;next} /^## /{f=0} f && NF' PLAN.md 2>/dev/null | grep -v '^<!--' \
-  | grep -viE '^[[:space:]*_-]*\(?(none|n/?a|no blockers?|nothing)[^a-z]*\)?[.[:space:]]*$' | head -3; }
+  | grep -viE '^[[:space:]*_-]*\(?(none|n/?a|no blockers?|nothing|empty|nil|tbd)\b[^a-z]*(yet|so far)?[^a-z]*\)?[.[:space:]]*$' \
+  | grep -vE '^[[:space:]*_-]*\([^)]*\)[.[:space:]]*$' | head -3; }   # also any line that is only "(...)"
 stop() { hdr "STOPPED: $*"; echo "Files: PLAN.md, PLAN.review.md, PLAN.next.md; sessions in PLAN.loop/"; exit 1; }
 # Small models drift on heading levels ("# Slice 2", "### Slice: ..."); pi-plan and this loop expect "## Slice".
 norm_next() { [ -f PLAN.next.md ] && sed -i -E 's/^#{1,4}[[:space:]]*(Slice\b)/## \1/' PLAN.next.md; true; }
@@ -52,6 +53,10 @@ code_reviewed() {
   [ "$(cat PLAN.loop/review-tries 2>/dev/null || echo 0)" -ge 2 ]
 }
 
+# "pi-loop continue" (or resume / next) where a plan is in progress means: resume, not a new task called "continue"
+case "${TASK,,}" in continue|resume|next|go|"keep going")
+  if [ -f PLAN.md ] || [ -f PLAN.next.md ]; then echo "[pi-loop] \"$TASK\" taken as: resume this project (for a new task, describe it)"; TASK=; fi ;;
+esac
 if [ -n "$TASK" ]; then
   [ -f PLAN.md ] && mv -f PLAN.md PLAN.old.md
   rm -rf PLAN.notes.md PLAN.files PLAN.rehearsal PLAN.base PLAN.review.md PLAN.review.files PLAN.loop

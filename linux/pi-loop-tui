@@ -87,8 +87,10 @@ def refresh_side():
         if "### REVIEW CORRECTIONS" in plan: out.append(("y", "plan review: corrections added"))
         elif "Reviewed: no corrections" in plan: out.append(("ok", "plan review: no corrections"))
         blk = re.search(r"^## Blockers\n(.*?)(?=^## |\Z)", plan, re.M | re.S)
-        if blk and re.sub(r"(?i)\(?none\)?|n/a|<!--.*?-->|\s", "", blk.group(1)):
-            out.append(("r", "BLOCKERS: " + blk.group(1).strip().splitlines()[0]))
+        real = [l for l in blk.group(1).splitlines() if l.strip() and not re.match(
+            r"(?i)^[\s*_-]*(\([^)]*\)|<!--.*-->|(none|n/?a|no blockers?|nothing|empty|nil|tbd)\b.*?)[.\s]*$", l)] if blk else []
+        if real:
+            out.append(("r", "BLOCKERS: " + real[0].strip()))
     rv = (read("PLAN.review.md").splitlines() or [""])[0]
     if rv: out.append(("r" if "FAIL" in rv else "ok" if "PASS" in rv else "d", "code review: " + rv))
     nxt = re.findall(r"^#{1,4} *Slice:? *(.*)$", read("PLAN.next.md"), re.M)
