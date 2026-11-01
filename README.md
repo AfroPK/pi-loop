@@ -13,10 +13,19 @@ coder model carries it out step by step. Both models fit **fully in VRAM**, and 
    ├─ pi-plan    Swift 1.5 27B (IQ2_XS + MTP, 48K ctx)  thinking medium  → PLAN.md, PLAN.files/, PLAN.notes.md
    ├─ pi-review  Swift 1.5 27B, fresh session            thinking medium  → appends ### REVIEW CORRECTIONS
    ├─ pi-exec    Ornith 1.5 9B (Q8_0 + MTP, 80K ctx)     thinking low     → edits code, ticks boxes, runs Verify
-   └─ pi-code-review  Swift 1.5 27B, fresh session      thinking medium  → PLAN.review.md; proven bugs become a fix slice
-                 (Linux launchers so far) at the top of PLAN.next.md, which the next `pi-plan` picks up
-                 ▲ llama-swap swaps models (~35–40 s) — only one fits in 12 GB at a time
+   └─ pi-code-review  Swift 27B, fresh session          thinking medium  → PLAN.review.md; proven bugs become
+                                                                           a fix slice at the top of PLAN.next.md
+                 ▲ llama-swap swaps models (~30–40 s) — only one fits in 12 GB at a time
 ```
+
+Context sizes above are the Windows ones. On Linux the desktop takes far less VRAM: Swift runs 64K and Ornith Q6_K
+runs 160K (see [Linux](#linux)). `pi-code-review` has Linux launchers only so far.
+
+After `pi-exec`, **`pi-code-review`** reviews only what the executor changed (a diff against the `PLAN.base/` snapshot
+`pi-exec` takes), reruns Verify and the tests, and probes what the tests miss. Every finding must come with a proof
+script and its real output (kept in `PLAN.review.files/`), at most 3 correctness findings, no style. Proven bugs become
+a `## Slice: fixes from code review` that plain `pi-plan` picks up next; it never edits code itself. First test, on a
+Go game slice whose Verify all passed: it found a real pass-counter bug, missed a ko-rule bug, no false findings.
 
 ## Why this works on a small GPU
 
@@ -34,7 +43,7 @@ coder model carries it out step by step. Both models fit **fully in VRAM**, and 
 | | |
 |---|---|
 | GPU | AMD RX 6750 XT 12 GB (RDNA2, gfx1031) on ROCm (HIP) |
-| OS | Windows 11, Git Bash as Pi's shell |
+| OS | Windows 11 with Git Bash as Pi's shell, and Lubuntu 26.04 (ROCm 7.1 from the Ubuntu archive) |
 | CPU / RAM | Ryzen 7 5700X, 32 GB (both models run fully in VRAM, so these barely matter) |
 
 NVIDIA 12 GB cards should work with a CUDA llama.cpp build and the same flags. That's untested here, so measure the
@@ -96,17 +105,30 @@ The first launcher you run starts llama-swap for you. To run it by hand, use `st
 4. Pi config as in step 4 above, in `~/.pi/agent/`. On Linux Swift fits 64K, so set its `contextWindow` to 65536
    and drop the 48K `modelOverrides` entry.
 5. `cp linux/environment.example.md prompts/environment.md` and edit it (gitignored), then link the launchers onto
-   your PATH: `for f in pi-plan pi-review pi-exec pi-pe pi-stop; do ln -s "$PWD/linux/$f" ~/.local/bin/; done`.
+   your PATH: `for f in pi-plan pi-review pi-exec pi-code-review pi-pe pi-stop; do ln -s "$PWD/linux/$f" ~/.local/bin/; done`.
    They find the prompts in `../prompts` (or set `PI_PROMPTS`).
 6. loop-police and its patch: same as step 6.
+
+Measured on Linux (RX 6750 XT, ROCm 7.1, MTP n2, thinking on, through llama-swap):
+
+| Role | Model | Context | Decode short | Decode when nearly full |
+|---|---|---|---|---|
+| Planner / reviewers | Swift 1.5 27B IQ2_XS | 64K q4_0 | 37.6 tok/s | 21.6 at 52K |
+| Executor | Ornith 1.5 9B **Q6_K** (7.0 GB) | 160K q8_0 | 77.0 tok/s | 23.9 at 138K |
+| Executor, max context | Ornith 1.5 9B Q6_K | 256K q4_0 | ~75 tok/s | 16.2 at 236K |
+| Executor, faster prefill | Ornith 1.5 9B Q8_0 | 80K q8_0 | 68.5 tok/s | 35.2 at 65K |
+
+The Q6_K decodes faster than the Q8_0 and fits twice the context, but prefills ~30% slower (735 vs 1038 tok/s).
+`linux/llama-swap/config.yaml` uses it under the same `ornith9b-q8` id, so Pi and the launchers need no changes;
+set that model's `contextWindow` to 163840 in models.json. Download `Ornith-1.5-9B-Q6_K.gguf` from the same repo.
 
 ## Repo layout
 
 | Path | What |
 |---|---|
-| `linux/` | bash launchers, Linux `environment.example.md`, llama-swap config + systemd user unit |
-| `launchers/` | `pi-plan`, `pi-review`, `pi-exec`, `pi-pe`, `pi-stop`, plus `ensure-server.ps1` (starts llama-swap and loads a model by id) |
-| `prompts/` | `planner.md`, `reviewer.md`, `executor.md` (role rules), `environment.example.md` (your machine's facts), `local-session.md` |
+| `linux/` | bash launchers (incl. `pi-code-review`), Linux `environment.example.md`, llama-swap config + systemd user unit |
+| `launchers/` | Windows: `pi-plan`, `pi-review`, `pi-exec`, `pi-pe`, `pi-stop`, plus `ensure-server.ps1` (starts llama-swap and loads a model by id) |
+| `prompts/` | `planner.md`, `reviewer.md`, `executor.md`, `code-reviewer.md` (role rules), `environment.example.md` (your machine's facts), `local-session.md` |
 | `llama-swap/` | `config.yaml` with both models' tuned llama-server flags |
 | `pi-config/` | Pi provider/model definitions (thinking-level mapping) and compaction settings |
 | `patches/` | Fix for pi-loop-police's loop recovery silently ending the session |

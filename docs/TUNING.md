@@ -20,6 +20,17 @@ Measured limits (desktop using ~0.6–1 GB of VRAM):
 | Swift 27B IQ3_XXS (10.4 GB) | 16K | 22K |
 | Ornith 9B Q8_0 (9.8 GB) | 80K (11.78 GB at 68K deep) | 96K |
 
+On Linux (Lubuntu, desktop ~0.3 GB of VRAM; ROCm fails the allocation instead of spilling, so "fits" = loads and a
+~90% fill shows no GTT growth in `/sys/class/drm/card*/device/mem_info_gtt_used`):
+
+| Model | KV q8_0 | KV q4_0 |
+|---|---|---|
+| Swift 27B IQ2_XS | | 64K (11.0 GB at 52K deep) |
+| Ornith 9B Q8_0 | 96K loads (12.0 GB, very tight) | 160K loads (12.2 GB, very tight) |
+| Ornith 9B Q6_K (7.0 GB) | **160K** (11.6 GB at 138K deep, 23.9 tok/s) | **256K** (12.1 GB at 236K deep, 16.2 tok/s) |
+
+Always use `--parallel 1`: llama-server's default 4 slots each get MTP draft and compute buffers.
+
 ## The desktop's share of VRAM
 
 `dwm.exe` (the Windows compositor) holds VRAM for **every display Windows thinks is attached**, including virtual

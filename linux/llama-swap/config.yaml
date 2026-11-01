@@ -26,12 +26,13 @@ models:
       --chat-template-kwargs "{\"reasoning_effort\":\"medium\"}"
       --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0
 
-  # EXECUTOR: Ornith 1.5 9B Q8_0 + MTP, all in VRAM.
+  # EXECUTOR: Ornith 1.5 9B Q6_K + MTP (id kept for Pi and the launchers). Q6_K: 77 tok/s vs Q8_0 68.5, and twice
+  # the context; prefill ~30% slower. 160K q8_0 KV = 11.7 GB. For 256K use q4_0 KV (12.1 GB, very little headroom).
   "ornith9b-q8":
-    name: "Ornith 1.5 9B Q8_0 (80K q8_0, MTP n2)"
+    name: "Ornith 1.5 9B Q6_K (160K q8_0, MTP n2)"
     env: ["HSA_OVERRIDE_GFX_VERSION=10.3.0"]
     cmd: >-
       ${server} ${mtp2}
-      --model ${models}/ornith-ai/Ornith-1.5-9B-GGUF/Ornith-1.5-9B-Q8_0.gguf
-      --ctx-size 81920 --cache-type-k q8_0 --cache-type-v q8_0
+      --model ${models}/ornith-ai/Ornith-1.5-9B-GGUF/Ornith-1.5-9B-Q6_K.gguf
+      --ctx-size 163840 --cache-type-k q8_0 --cache-type-v q8_0
       --no-webui --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0
