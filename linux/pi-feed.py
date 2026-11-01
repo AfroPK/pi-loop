@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""pi-feed.py LABEL [LOG]: turn `pi --mode json` events on stdin into one short line per action.
-Raw events are saved to LOG (if given) so the full session can be inspected afterwards."""
-import json, os, sys, time
+"""pi-feed.py LABEL [LOG]: turn `pi --mode json` events on stdin into a readable live feed:
+the agent's thinking (dim, 💭) and replies (│) as they stream, plus one line per tool call and its result.
+PI_FEED_THINKING=full (default) | short (first line of each thought) | off. Raw events go to LOG if given."""
+import json, os, shutil, sys, textwrap, time
 
 label = sys.argv[1] if len(sys.argv) > 1 else "pi"
 log = open(sys.argv[2], "w") if len(sys.argv) > 2 else None
@@ -11,7 +12,40 @@ def c(k, s): return f"{C[k]}{s}{C['off']}" if tty else s
 
 t0 = time.time()
 def stamp(): s = int(time.time() - t0); return f"{s // 60:2d}:{s % 60:02d}"
-def say(msg): print(f"{c('dim', stamp())} {c('cyn', f'[{label}]')} {msg}", flush=True)
+def say(msg):
+    global sys
+    try: print(f"{c('dim', stamp())} {c('cyn', f'[{label}]')} {msg}", flush=True)
+    except (BrokenPipeError, OSError):   # the viewer went away: keep consuming events so the agent finishes
+        sys.stdout = open(os.devnull, "w")
+
+MODE = os.environ.get("PI_FEED_THINKING", "full")
+WIDTH = max(40, shutil.get_terminal_size((120, 40)).columns - 18)   # room for "mm:ss [label] "
+buf = {"thinking": "", "text": ""}
+shown_short = False
+
+def emit(kind, line):
+    """Print one finished line of thinking or reply text, wrapped to the terminal."""
+    global shown_short
+    if not line.strip(): return
+    if kind == "thinking":
+        if MODE == "off": return
+        if MODE == "short":
+            if shown_short: return
+            shown_short = True
+        for w in textwrap.wrap(line, WIDTH) or [""]: say(c("dim", "💭 " + w))
+    else:
+        for w in textwrap.wrap(line, WIDTH) or [""]: say("│ " + w)
+
+def feed(kind, delta):
+    buf[kind] += delta
+    while "\n" in buf[kind]:
+        line, buf[kind] = buf[kind].split("\n", 1)
+        emit(kind, line)
+
+def flush(kind):
+    global shown_short
+    if buf[kind]: emit(kind, buf[kind]); buf[kind] = ""
+    if kind == "thinking": shown_short = False
 
 def one_line(s, n=90):
     s = " ".join(str(s).split())
@@ -35,8 +69,13 @@ for line in sys.stdin:
         t = e.get("type")
         if t == "message_update":
             ev = e.get("assistantMessageEvent") or {}
-            if ev.get("type") == "thinking_delta": thinking += len(ev.get("delta", ""))
+            et = ev.get("type")
+            if et == "thinking_delta": thinking += len(ev.get("delta", "")); feed("thinking", ev.get("delta", ""))
+            elif et == "thinking_end": flush("thinking")
+            elif et == "text_delta": feed("text", ev.get("delta", ""))
+            elif et == "text_end": flush("text")
         elif t == "tool_execution_start":
+            flush("thinking"); flush("text")
             tools += 1; starts[e.get("toolCallId")] = time.time()
             say(f"▸ {e.get('toolName')}  {describe(e.get('toolName'), e.get('args'))}")
         elif t == "tool_execution_end":
@@ -62,6 +101,4 @@ for line in sys.stdin:
 
 el = time.time() - t0
 say(f"done in {int(el // 60)}m{int(el % 60):02d}s  tools {tools}  output {out_tokens} tok  thinking ~{thinking // 4} tok")
-if last_text:
-    for l in last_text.splitlines()[-6:]:
-        if l.strip(): say(c("dim", "│ ") + one_line(l, 110))
+flush("thinking"); flush("text")

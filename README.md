@@ -146,7 +146,7 @@ plain `pi-loop` resumes at the right step after a stop or Ctrl-C. First run, a t
 3m42s, plan review 2m04s / 1m38s, exec 1m13s / 3m26s, code review 1m42s / 2m18s per slice; 8/8 tests, every
 command and error path correct.
 
-Full sessions are saved in `PLAN.loop/*.jsonl`. It stops and says why when exec leaves open boxes or Blockers, the
+The feed streams each agent's thinking (dim, `💭`) and replies (`│`) as they arrive; `PI_FEED_THINKING=short` shows only the first line of each thought, `off` hides it. Full sessions are saved in `PLAN.loop/*.jsonl`. It stops and says why when exec leaves open boxes or Blockers, the
 planner or executor hits its time limit, the code review keeps finding bugs (`--max-fix-rounds`, default 2), or the
 slice cap is reached (`--max-slices`, default 6). The reviewers are kept short on purpose: thinking `low`, a ~10
 tool-call budget in the prompt, and hard limits (`PI_REVIEW_TIMEOUT`=360 s, `PI_CODE_REVIEW_TIMEOUT`=480 s;
