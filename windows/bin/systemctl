@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # pi-loop on Windows: _common.sh runs "systemctl --user start llama-swap" when nothing answers on :8080.
-# Start llama-swap's .bat instead (PI_LLAMA_SWAP_BAT, default C:\llama-swap\start-llama-swap.bat), minimized.
+# Start llama-swap's .bat instead (PI_LLAMA_SWAP_BAT, default C:\llama-swap\start-llama-swap.bat), minimized,
+# detached the same way launchers/ensure-server.ps1 does (cmd's `start "title"` loses its quotes when called from bash).
 bat="${PI_LLAMA_SWAP_BAT:-C:\llama-swap\start-llama-swap.bat}"
 case "$*" in
-  *start*llama-swap*) cmd.exe //c start "llama-swap" //min "$bat" ;;
+  *start*llama-swap*)
+    [ -f "$bat" ] || { echo "systemctl shim: $bat not found (set PI_LLAMA_SWAP_BAT)" >&2; exit 1; }
+    BAT="$bat" powershell.exe -NoProfile -Command \
+      'Start-Process cmd.exe -ArgumentList "/c", ("`"" + $env:BAT + "`"") -WindowStyle Minimized' ;;
   *) echo "systemctl shim (pi-loop on Windows): only 'systemctl --user start llama-swap' is supported" >&2; exit 1 ;;
 esac
