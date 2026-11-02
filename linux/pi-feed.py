@@ -90,6 +90,13 @@ for line in sys.stdin:
         try: e = json.loads(line)
         except ValueError: continue
         t = e.get("type")
+        msg = e.get("message") if isinstance(e.get("message"), dict) else None
+        if LIVE and msg and msg.get("role") == "assistant" and msg.get("model"):
+            mid = (msg.get("provider") + "/" if msg.get("provider") else "") + msg["model"]
+            if mid != starts.get("_model"):
+                starts["_model"] = mid
+                try: print(f"\x1emodel {label} {mid}", flush=True)
+                except (BrokenPipeError, OSError): pass
         if t == "turn_start":
             turn_start, first_tok = time.time(), None
             pieces = 0

@@ -26,6 +26,10 @@ FEED = re.compile(r"^\s*\d+:\d\d \[([^\]]+)\] (.*)$")
 
 def on_line(raw):
     s = raw.rstrip("\n")
+    if s.startswith("\x1emodel "):                                # model the current agent calls (from pi-feed)
+        p = s.split()
+        if len(p) >= 3: state["agent_model"] = p[2]
+        return
     if s.startswith("\x1elive "):                                 # live rate from pi-feed (not shown in the feed)
         p = s.split()
         if len(p) >= 5:
@@ -41,6 +45,7 @@ def on_line(raw):
         if sm:
             state["slice"], state["stage"] = sm.group(1), sm.group(2).split("  ")[0]
             state["stages"].append([state["slice"], state["stage"], None])
+            state["agent_model"] = ""                                   # set again by the next stage's first reply
             state["stage_t"] = now
         elif title.startswith(("DONE", "STOPPED")):
             state["stage"] = title.split(":")[0].lower()
@@ -164,7 +169,11 @@ def main(scr):
                 speed = "⚡ running a tool…"
             else:
                 speed = f"⚡ last {state['tps'] or '-'} tok/s"
-            parts = ["pi-loop", f"slice {state['slice']}", state["stage"], side["model"], speed, side["vram"],
+            am = state.get("agent_model") or ""
+            gpu = side["model"]
+            model = (f"{am.split('/', 1)[1] if am.startswith('openrouter/') else am} (gpu: {gpu})" if am and gpu and gpu not in am
+                     else (am or gpu))
+            parts = ["pi-loop", f"slice {state['slice']}", state["stage"], model, speed, side["vram"],
                      f"{int(el // 3600)}:{int(el // 60 % 60):02d}:{int(el % 60):02d}"]
             top = " " + " │ ".join(p for p in parts if p) + " "
             scr.attron(curses.A_REVERSE); scr.addstr(0, 0, clip(top.ljust(W), W - 1)); scr.attroff(curses.A_REVERSE)
