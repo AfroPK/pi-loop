@@ -31,18 +31,32 @@ os.killpg = killpg
 if not hasattr(signal, "SIGKILL"): signal.SIGKILL = signal.SIGTERM
 
 # windows-curses delivers Ctrl-C as key 3 instead of SIGINT; raise it like Linux does, so the TUI's exit path stops the run.
-# PDCurses also doesn't follow window resizes on its own (ncurses does on SIGWINCH): getmaxyx keeps the old size until
-# resize_term(0, 0), and the terminal's reflowed leftovers stay on screen until a full clear() repaint.
-import curses
+# PDCurses also doesn't follow window resizes on its own (ncurses does on SIGWINCH), and the terminal's reflowed
+# leftovers stay on screen until a full clear() repaint. It draws into its own active screen buffer, so stdout
+# (os.get_terminal_size) keeps reporting the old size: ask CONOUT$, the active buffer. resize_term(0, 0) doesn't
+# re-read the size either, so pass it.
+import ctypes, curses
+from ctypes import wintypes
+_k32 = ctypes.windll.kernel32
+_k32.CreateFileW.restype = wintypes.HANDLE
+class _CSBI(ctypes.Structure):
+    _fields_ = [("size", wintypes._COORD), ("cursor", wintypes._COORD), ("attr", wintypes.WORD),
+                ("win", wintypes.SMALL_RECT), ("maxwin", wintypes._COORD)]
 class _Screen:
+    _con = None
     def __init__(self, scr): self._scr = scr
     def __getattr__(self, name): return getattr(self._scr, name)
+    def _console_size(self):
+        if self._con is None:   # after initscr, so CONOUT$ is curses' buffer
+            self._con = _k32.CreateFileW("CONOUT$", 0xC0000000, 3, None, 3, 0, None)
+        c = _CSBI()
+        if not _k32.GetConsoleScreenBufferInfo(wintypes.HANDLE(self._con), ctypes.byref(c)): return None
+        return c.win.Bottom - c.win.Top + 1, c.win.Right - c.win.Left + 1
     def getmaxyx(self):
-        try:   # resize_term(0, 0) doesn't re-read the console size here, so pass it
-            ts = os.get_terminal_size()
-            if (ts.lines, ts.columns) != self._scr.getmaxyx():
-                curses.resize_term(ts.lines, ts.columns); self._scr.clear()
-        except (OSError, curses.error): pass
+        size = self._console_size()
+        if size and size != self._scr.getmaxyx():
+            try: curses.resize_term(*size); self._scr.clear()
+            except curses.error: pass
         return self._scr.getmaxyx()
     def getch(self, *a):
         k = self._scr.getch(*a)
