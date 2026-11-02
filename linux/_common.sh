@@ -5,6 +5,7 @@
 #   PI_EXCLUDE_TOOLS='ssh-*,call_model,mcp__*'        # passed as --exclude-tools to every role ...
 #   PI_EXEC_EXCLUDE_TOOLS='ssh-*,call_model'          # ... except pi-exec, if this is set
 #   PI_PLAN_MODEL=strata/qwen3.8-flash-next-gyro-s     # Pi provider/id for pi-plan ...
+#   PI_PLAN_THINKING=xhigh / PI_REVIEW_THINKING=xhigh  # thinking level for pi-plan / the reviewers (default medium / low)
 #   PI_PLAN_SWAP_ID=qwen3.8-flash-next-gyro-s          # ... and the llama-swap id that serves it
 #   PI_REVIEW_MODEL=... PI_REVIEW_SWAP_ID=...          # the same for pi-review and pi-code-review
 #   PI_EXEC_MODEL=... PI_EXEC_SWAP_ID=...              # the same for pi-exec

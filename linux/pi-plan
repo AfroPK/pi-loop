@@ -26,7 +26,7 @@ if [ $NEXTMODE = 1 ]; then
 fi
 ensure_server "$MODEL_ID" || exit 1
 prompt_args planner.md || exit 1
-PI=(--model "$PI_MODEL" --thinking medium --no-skills --tools "$(tools read,grep,find,ls,write,edit,bash)" "${P[@]}" --name plan)
+PI=(--model "$PI_MODEL" --thinking "${PI_PLAN_THINKING:-medium}" --no-skills --tools "$(tools read,grep,find,ls,write,edit,bash)" "${P[@]}" --name plan)
 if [ $NEXTMODE = 1 ]; then
   run_pi plan "${PI_PLAN_TIMEOUT:-1800}" "${PI[@]}" "$@" "Plan the next slice: the FIRST '## Slice' section of PLAN.next.md is your whole task. Read it, then follow the planner rules. When PLAN.md is written, remove that section from PLAN.next.md with the edit tool (keep the other slices); if no slices are left, delete PLAN.next.md."
   exit $?
