@@ -31,13 +31,23 @@ os.killpg = killpg
 if not hasattr(signal, "SIGKILL"): signal.SIGKILL = signal.SIGTERM
 
 # windows-curses delivers Ctrl-C as key 3 instead of SIGINT; raise it like Linux does, so the TUI's exit path stops the run.
+# PDCurses also doesn't follow window resizes on its own (ncurses does on SIGWINCH): getmaxyx keeps the old size until
+# resize_term(0, 0), and the terminal's reflowed leftovers stay on screen until a full clear() repaint.
 import curses
 class _Screen:
     def __init__(self, scr): self._scr = scr
     def __getattr__(self, name): return getattr(self._scr, name)
+    def getmaxyx(self):
+        try:   # resize_term(0, 0) doesn't re-read the console size here, so pass it
+            ts = os.get_terminal_size()
+            if (ts.lines, ts.columns) != self._scr.getmaxyx():
+                curses.resize_term(ts.lines, ts.columns); self._scr.clear()
+        except (OSError, curses.error): pass
+        return self._scr.getmaxyx()
     def getch(self, *a):
         k = self._scr.getch(*a)
         if k == 3: raise KeyboardInterrupt
+        if k == curses.KEY_RESIZE: self.getmaxyx(); return -1
         return k
 _wrapper = curses.wrapper
 curses.wrapper = lambda fn, *a, **k: _wrapper(lambda scr, *a2, **k2: fn(_Screen(scr), *a2, **k2), *a, **k)
