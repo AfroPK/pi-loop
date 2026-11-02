@@ -9,6 +9,7 @@
 #   PI_PLAN_SWAP_ID=qwen3.8-flash-next-gyro-s          # ... and the llama-swap id that serves it
 #   PI_REVIEW_MODEL=... PI_REVIEW_SWAP_ID=...          # the same for pi-review and pi-code-review
 #   PI_EXEC_MODEL=... PI_EXEC_SWAP_ID=...              # the same for pi-exec
+#   PI_*_SWAP_ID=none                                  # the role runs on a cloud model: load nothing in llama-swap
 _here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 [ -f "${PI_LOCAL_ENV:-$HOME/.config/pi-local/env}" ] && source "${PI_LOCAL_ENV:-$HOME/.config/pi-local/env}"
 # Prompts: $PI_PROMPTS, else next to the launchers (installed layout), else ../prompts (running from the repo).
@@ -31,8 +32,9 @@ tools() {  # tools <comma list> -> the list plus PI_EXTRA_TOOLS
   if [ -n "${PI_EXTRA_TOOLS:-}" ]; then echo "$1,$PI_EXTRA_TOOLS"; else echo "$1"; fi
 }
 
-ensure_server() {  # ensure_server <llama-swap model id>
+ensure_server() {  # ensure_server <llama-swap model id>; "none" = a cloud model, nothing to load
   local id="$1" i why
+  [ "$id" = none ] && return 0
   if ! curl -sf -m 3 "$SWAP/v1/models" >/dev/null; then
     if [ -n "${PI_REMOTE_SWAP:-}" ]; then
       echo "[pi-local] Nothing answers on $SWAP. On the model PC: systemctl --user start llama-swap laptop-link"; return 1
