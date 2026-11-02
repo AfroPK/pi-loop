@@ -11,7 +11,7 @@ while :; do
       printf 'stage   %s  (last event %ss ago)\n' "$st" "$age"
     fi
     m=$(curl -s -m 2 "$SWAP/running" | python3 -c 'import json,sys
-try: print(", ".join(f"{m[\"model\"]} ({m[\"state\"]})" for m in json.load(sys.stdin)["running"]) or "none")
+try: print(", ".join(m["model"] + " (" + m["state"] + ")" for m in json.load(sys.stdin)["running"]) or "none")
 except Exception: print("llama-swap not reachable")' 2>/dev/null)
     printf 'model   %s\n' "$m"
     v=$(cat /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null | head -1)

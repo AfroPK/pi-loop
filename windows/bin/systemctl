@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# pi-loop on Windows: _common.sh runs "systemctl --user start llama-swap" when nothing answers on :8080.
+# Start llama-swap's .bat instead (PI_LLAMA_SWAP_BAT, default C:\llama-swap\start-llama-swap.bat), minimized.
+bat="${PI_LLAMA_SWAP_BAT:-C:\llama-swap\start-llama-swap.bat}"
+case "$*" in
+  *start*llama-swap*) cmd.exe //c start "llama-swap" //min "$bat" ;;
+  *) echo "systemctl shim (pi-loop on Windows): only 'systemctl --user start llama-swap' is supported" >&2; exit 1 ;;
+esac

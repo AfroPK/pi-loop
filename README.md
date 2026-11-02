@@ -19,7 +19,7 @@ coder model carries it out step by step. Both models fit **fully in VRAM**, and 
 ```
 
 Context sizes above are the Windows ones. On Linux the desktop takes far less VRAM: Swift runs 64K and Ornith Q6_K
-runs 160K (see [Linux](#linux)). `pi-code-review` has Linux launchers only so far.
+runs 160K (see [Linux](#linux)). `pi-code-review` and `pi-loop` are bash scripts; on Windows they run under Git Bash via `windows\pi-loop.cmd`.
 
 After `pi-exec`, **`pi-code-review`** reviews only what the executor changed (a diff against the `PLAN.base/` snapshot
 `pi-exec` takes), reruns Verify and the tests, and probes what the tests miss. Every finding must come with a proof
@@ -48,6 +48,26 @@ Go game slice whose Verify all passed: it found a real pass-counter bug, missed 
 
 NVIDIA 12 GB cards should work with a CUDA llama.cpp build and the same flags. That's untested here, so measure the
 context limits yourself (see [docs/TUNING.md](docs/TUNING.md)).
+
+## Dependencies
+
+Everything the launchers and `pi-loop` call, per OS. "Optional" items only switch off one feature when missing.
+
+| Needed for | Linux | Windows 10/11 |
+|---|---|---|
+| Pi | Node.js 22+, `npm i -g @earendil-works/pi-coding-agent` (`pi` on PATH) | the same (`pi` lands in `%APPDATA%\npm`, which Git Bash also sees) |
+| Models | a GPU build of llama.cpp `llama-server`, [llama-swap](https://github.com/mostlygeek/llama-swap/releases), both GGUFs (see Quick start) | the same; llama-swap in `C:\llama-swap` |
+| Shell for the agents and `pi-loop` | bash 4+ with coreutils (`timeout`, `tar`, `sed`, `awk`, `grep`, `date`, `stat`) and `curl`: all standard | [Git for Windows](https://git-scm.com/download/win): its Git Bash supplies all of these. Set Pi's `"shellPath"` to its `bash.exe` |
+| `pi-loop` feed, model checks (`pi-feed.py`, `ensure_server`, `pi-loop-status`) | Python 3 (stdlib only) as `python3` | Python 3 from python.org as `python` or `py`; `windows\bin\python3` maps the name |
+| Starting llama-swap when it is down | systemd user unit (`linux/llama-swap/llama-swap.service`); `ss` (iproute2) to spot a foreign server on :8080 | `windows\bin\systemctl` runs `C:\llama-swap\start-llama-swap.bat` (or `PI_LLAMA_SWAP_BAT`); the `.cmd` launchers use `launchers\ensure-server.ps1` (Windows PowerShell 5.1, built in) |
+| `pi-loop --tui` (optional) | Python's built-in `curses` (on Debian/Ubuntu it is part of `python3`) | `pip install windows-curses` |
+| `pi-loop --tmux` (optional) | `tmux` | not available |
+| Web search for planner/reviewers (optional) | a Firecrawl MCP server + `pi-mcp-adapter`; add the tools via `PI_EXTRA_TOOLS` | the same, or in the `.cmd` launchers' `--tools` |
+| Loop recovery (recommended) | `pi-loop-police@1.14.1` + `patches/pi-loop-police-1.14.1-recovery.patch` | the same |
+
+Which runner exists where: `pi-plan`, `pi-review`, `pi-exec`, `pi-pe`, `pi-stop` have native `.cmd` versions in
+`launchers/` and bash versions in `linux/`. `pi-code-review`, `pi-loop`, `pi-loop-status` and `pi-loop-tui` are bash
+only; on Windows, `windows\pi-loop.cmd` runs them under Git Bash (see [pi-loop on Windows](#pi-loop-on-windows)).
 
 ## Quick start
 
@@ -85,7 +105,7 @@ Or run each step yourself, so you can read the plan before anything changes:
 pi-plan "task"      &REM writes PLAN.md (add -p for no UI)
 pi-review           &REM appends corrections
 pi-exec             &REM carries it out (snapshots the project to PLAN.base/ first)
-pi-code-review      &REM Linux: reviews what pi-exec changed; proven bugs -> PLAN.review.md + fix slice in PLAN.next.md
+pi-code-review      &REM Windows: pi-loop --run pi-code-review. Reviews what pi-exec changed; proven bugs -> PLAN.review.md + fix slice in PLAN.next.md
 pi-plan             &REM no task = plan the next slice from PLAN.next.md
 pi-stop             &REM unload the model, free VRAM
 ```
@@ -122,7 +142,7 @@ The Q6_K decodes faster than the Q8_0 and fits twice the context, but prefills ~
 `linux/llama-swap/config.yaml` uses it under the same `ornith9b-q8` id, so Pi and the launchers need no changes;
 set that model's `contextWindow` to 163840 in models.json. Download `Ornith-1.5-9B-Q6_K.gguf` from the same repo.
 
-### pi-loop: run every slice unattended (Linux)
+### pi-loop: run every slice unattended
 
 ```bash
 pi-loop "task"          # or pi-loop TASK.md; plain pi-loop resumes wherever the files say
@@ -161,11 +181,38 @@ through a tunnel and one on the GPU PC): they swap models out from under each ot
 Per-machine settings (extra tools, a remote llama-swap) go in `~/.config/pi-local/env`; see the top of
 `linux/_common.sh`.
 
+### pi-loop on Windows
+
+`windows\pi-loop.cmd` runs the same bash scripts under Git Bash, so a Windows run behaves exactly like a Linux one.
+Install the Windows column of [Dependencies](#dependencies), do Quick start steps 1-6, then:
+
+1. Clone this repo somewhere permanent (e.g. `%USERPROFILE%\pi-loop`) and put its `windows\` folder on PATH, or call
+   `windows\pi-loop.cmd` by full path. Don't copy the files: the launcher finds `..\linux\` and `..\prompts\` from where it is.
+2. `copy prompts\environment.example.md prompts\environment.md` and edit it for your PC (say that the bash tool is
+   Git Bash, and that Python is `python`, not `python3`).
+3. Merge the `qwen27-review` provider from `pi-config/models.json` into your `models.json` (the reviewers use it).
+   If `settings.json` lists a bare `swift27-xs-64k` in `enabledModels`, write it as `qwen27/swift27-xs-64k`: the id
+   now exists under two providers.
+4. Optional: `%USERPROFILE%\.config\pi-local\env` with the same settings as on Linux (`PI_EXTRA_TOOLS`,
+   `PI_EXCLUDE_TOOLS`, model overrides). If Git Bash is not in `C:\Program Files\Git`, set `PI_BASH` to its `bash.exe`.
+5. For `--tui`: `pip install windows-curses`.
+
+```bat
+pi-loop TASK.md                         &REM task text with & | < > ( ) breaks in cmd, so a file is safest
+pi-loop --tui "Add a --json flag to report.py"
+pi-loop --run pi-code-review -p         &REM any other script from linux\
+pi-loop --run pi-loop-status            &REM side view in a second terminal
+```
+
+`--tmux` doesn't work on Windows. Ctrl-C stops the whole run, agents included (`q` in the TUI does the same through
+`taskkill /T`), and a plain `pi-loop` resumes it.
+
 ## Repo layout
 
 | Path | What |
 |---|---|
 | `linux/` | bash launchers (incl. `pi-code-review`, `pi-loop`, `pi-loop-tui`, `pi-feed.py`), Linux `environment.example.md`, llama-swap config + systemd user unit |
+| `windows/` | `pi-loop.cmd` (runs `pi-loop` and the other `linux/` scripts under Git Bash), `bin/` shims (`python3`, `systemctl`), `pi-loop-tui-win.py` (TUI on Windows) |
 | `launchers/` | Windows: `pi-plan`, `pi-review`, `pi-exec`, `pi-pe`, `pi-stop`, plus `ensure-server.ps1` (starts llama-swap and loads a model by id) |
 | `prompts/` | `planner.md`, `reviewer.md`, `executor.md`, `code-reviewer.md` (role rules), `environment.example.md` (your machine's facts), `local-session.md` |
 | `llama-swap/` | `config.yaml` with both models' tuned llama-server flags |

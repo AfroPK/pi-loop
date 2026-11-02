@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# pi-loop on Windows: the Linux scripts call python3, but python.org Python installs only "python" (or "py").
+# UTF-8 so pi-feed.py can print its emoji into a pipe.
+export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+if command -v python >/dev/null 2>&1; then exec python "$@"; else exec py -3 "$@"; fi
