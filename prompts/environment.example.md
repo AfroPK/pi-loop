@@ -7,4 +7,8 @@
 - Node: `node`. git, curl and `timeout` are available in bash.
 - Ports already in use, never bind them: 8080 (llama-swap, the model you are running on; killing it kills you). Pick a port in 7000-7999 and test it is free with `netstat -ano | grep :PORT`.
 - GUI programs (game engines, browsers) must always run with `timeout`, and never as part of a test suite.
+- Headless Chrome: call it directly from bash, never through `cmd //c` (Git Bash mangles the `\"` quoting and cmd
+  reports "not recognized"). Add `--virtual-time-budget=5000` so page scripts finish before the dump:
+  `timeout 60 "/c/Program Files/Google/Chrome/Application/chrome.exe" --headless=new --disable-gpu --virtual-time-budget=5000 --dump-dom "file:///C:/path/index.html" > dom.txt 2>/dev/null`
+- A command that exits non-zero with no useful output: run it again without the redirects to see the real error.
 - Never kill processes by name (node, python, llama*); you may only stop a process you started yourself.

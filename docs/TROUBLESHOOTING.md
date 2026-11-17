@@ -35,6 +35,12 @@ crashed llama-server that still holds VRAM. Stop it from the llama-swap UI or wi
 
 stdin is still open. Redirect it: `pi-plan -p "task" < /dev/null` (Git Bash) or `<nul` (cmd).
 
+## Headless Chrome exits 1 with an empty dump
+
+Models like to wrap Chrome in `cmd //c "\"C:\\Program Files\\...\\chrome.exe\" ..."`. Git Bash passes the `\"` through
+literally, so cmd looks for a program whose name includes the quotes and fails with "not recognized". With `2>&1` into
+a file, the model only sees `exit=1`. Call Chrome directly from bash instead (see `environment.example.md`).
+
 ## The planner wrote code instead of a plan
 
 The model isn't fit for the planner role (see [MODELS.md](MODELS.md)). Some models ignore role prompts under tool
