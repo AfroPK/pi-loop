@@ -1,11 +1,24 @@
-# pi-loop: local plan → review → exec → code-review for the Pi coding agent
+<p align="center">
+  <img src=".github/assets/header.png" alt="pi-loop: local plan · review · exec" width="100%">
+</p>
 
-A coding-agent workflow that runs **entirely on local inference** on one 12 GB GPU. It uses
-[llama.cpp](https://github.com/ggml-org/llama.cpp), [llama-swap](https://github.com/mostlygeek/llama-swap) and the
-[Pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent). It needs no cloud API and no API keys.
+<p align="center">
+  <img src="https://img.shields.io/badge/%7B%20local%20ai%20%7D-D6246E?style=for-the-badge&labelColor=0B0608" alt="{ local ai }">
+  <img src="https://img.shields.io/badge/llama.cpp-0B0608?style=for-the-badge&labelColor=0B0608" alt="llama.cpp">
+  <img src="https://img.shields.io/badge/llama--swap-0B0608?style=for-the-badge&labelColor=0B0608" alt="llama-swap">
+  <img src="https://img.shields.io/badge/status-working-D6246E?style=for-the-badge&labelColor=0B0608" alt="status: working">
+</p>
 
-A stronger "thinking" model writes a verified plan. A fresh session of the same model reviews it. Then a small, fast
-coder model carries it out step by step. Both models fit **fully in VRAM**, and llama-swap swaps between them on demand.
+<p><img src=".github/assets/section-about.png" alt="01 About" width="100%"></p>
+
+**`{ pi-loop }`**: a plan → review → exec → code-review loop that runs entirely on local inference, on one 12 GB GPU.
+
+No cloud API, no keys. A 27B thinking model writes a verified plan, a fresh session of the same model reviews it, and a 9B coder executes it slice by slice. Both models fit fully in VRAM and llama-swap swaps between them on demand.
+
+> [!NOTE]
+> Needs a llama.cpp `llama-server` build for your GPU, llama-swap, and both GGUFs. Tested on an AMD RX 6750 XT 12 GB on ROCm; NVIDIA 12 GB should work with a CUDA build but is untested here.
+
+<p><img src=".github/assets/section-how-it-works.png" alt="02 How it works" width="100%"></p>
 
 ```
  pi-pe "task"
@@ -18,219 +31,61 @@ coder model carries it out step by step. Both models fit **fully in VRAM**, and 
                  ▲ llama-swap swaps models (~30–40 s) — only one fits in 12 GB at a time
 ```
 
-Context sizes above are the Windows ones. On Linux the desktop takes far less VRAM: Swift runs 64K and Ornith Q6_K
-runs 160K (see [Linux](#linux)). `pi-code-review` and `pi-loop` are bash scripts; on Windows they run under Git Bash via `windows\pi-loop.cmd`.
+Both GGUFs carry their own multi-token prediction head, so `draft-mtp` speeds up decoding with no separate draft model: 27B ~41 tok/s, 9B ~62 tok/s. The prompts force small slices, code written once into `PLAN.files/`, a rehearsal in a scratch copy and a mandatory self-test, so "done" means proven. `pi-code-review` only reviews what `pi-exec` changed, and every finding needs a proof script and its real output — at most 3 correctness findings, no style.
 
-After `pi-exec`, **`pi-code-review`** reviews only what the executor changed (a diff against the `PLAN.base/` snapshot
-`pi-exec` takes), reruns Verify and the tests, and probes what the tests miss. Every finding must come with a proof
-script and its real output (kept in `PLAN.review.files/`), at most 3 correctness findings, no style. Proven bugs become
-a `## Slice: fixes from code review` that plain `pi-plan` picks up next; it never edits code itself. First test, on a
-Go game slice whose Verify all passed: it found a real pass-counter bug, missed a ko-rule bug, no false findings.
+<p><img src=".github/assets/section-quick-start.png" alt="03 Quick start" width="100%"></p>
 
-## Why this works on a small GPU
+**Needs:** Node.js 22+ · Git for Windows · a GPU llama.cpp build · llama-swap · both GGUFs
 
-- **The two roles need different models.** In tests on this machine, small and MoE models wrote the code themselves
-  instead of a plan, or got stuck in tool loops, when given the planner role. A dense 27B at 2-bit planned reliably.
-  The 9B coder was the fastest model that executed those plans correctly.
-- **Both models use multi-token prediction (MTP).** Each GGUF has its own MTP head, so llama.cpp's `draft-mtp` speeds up
-  decoding with no separate draft model: 27B ~41 tok/s, 9B ~62 tok/s.
-- **Plans are made safe for a small executor.** The prompts force small slices, code written once into `PLAN.files/`,
-  a rehearsal in a scratch copy, and a mandatory log/self-test for every feature, so "done" means proven.
-  See [docs/WORKFLOW.md](docs/WORKFLOW.md).
+```bash
+npm i -g @earendil-works/pi-coding-agent
+# llama-swap: unzip to C:\llama-swap
+```
 
-## Tested hardware
+1. Download the models: planner/reviewer `ukisai/Swift-1.5-Qwen3.8-27B-GSQ-RCO-GGUF` (`...-IQ2_XS-mtp.gguf`, 8.8 GB) and executor `ornith-ai/Ornith-1.5-9B-GGUF` (`Ornith-1.5-9B-Q8_0.gguf`, 9.8 GB).
+2. Copy `llama-swap/config.yaml` and `start-llama-swap.bat` to `C:\llama-swap`, set the `server` and `models` macros to your paths.
+3. Merge `pi-config/models.json` into `%USERPROFILE%\.pi\agent\models.json` and the relevant keys of `settings.example.json` into `settings.json`. Set `"shellPath"` to Git's `bash.exe`. `pi --list-models` must show `swift27-xs-64k` and `ornith9b-q8`.
+4. Copy `launchers/` and `prompts/` into one folder on your PATH, rename `environment.example.md` to `environment.md` and edit it for your PC.
+5. Recommended: install `pi-loop-police@1.14.1` and apply `patches/pi-loop-police-1.14.1-recovery.patch`.
+6. In a project folder: `pi-pe "Add a --json flag to report.py that prints the summary as JSON, with a unittest"`.
 
-| | |
-|---|---|
-| GPU | AMD RX 6750 XT 12 GB (RDNA2, gfx1031) on ROCm (HIP) |
-| OS | Windows 11 with Git Bash as Pi's shell, and Lubuntu 26.04 (ROCm 7.1 from the Ubuntu archive) |
-| CPU / RAM | Ryzen 7 5700X, 32 GB (both models run fully in VRAM, so these barely matter) |
+Or run the steps yourself so you can read the plan first: `pi-plan "task"` → `pi-review` → `pi-exec` → `pi-code-review` → `pi-stop`.
 
-NVIDIA 12 GB cards should work with a CUDA llama.cpp build and the same flags. That's untested here, so measure the
-context limits yourself (see [docs/TUNING.md](docs/TUNING.md)).
-
-## Dependencies
-
-Everything the launchers and `pi-loop` call, per OS. "Optional" items only switch off one feature when missing.
+<p><img src=".github/assets/section-dependencies.png" alt="04 Dependencies" width="100%"></p>
 
 | Needed for | Linux | Windows 10/11 |
 |---|---|---|
-| Pi | Node.js 22+, `npm i -g @earendil-works/pi-coding-agent` (`pi` on PATH) | the same (`pi` lands in `%APPDATA%\npm`, which Git Bash also sees) |
-| Models | a GPU build of llama.cpp `llama-server`, [llama-swap](https://github.com/mostlygeek/llama-swap/releases), both GGUFs (see Quick start) | the same; llama-swap in `C:\llama-swap` |
-| Shell for the agents and `pi-loop` | bash 4+ with coreutils (`timeout`, `tar`, `sed`, `awk`, `grep`, `date`, `stat`) and `curl`: all standard | [Git for Windows](https://git-scm.com/download/win): its Git Bash supplies all of these. Set Pi's `"shellPath"` to its `bash.exe` |
-| `pi-loop` feed, model checks (`pi-feed.py`, `ensure_server`, `pi-loop-status`) | Python 3 (stdlib only) as `python3` | Python 3 from python.org as `python` or `py`; `windows\bin\python3` maps the name |
-| Starting llama-swap when it is down | systemd user unit (`linux/llama-swap/llama-swap.service`); `ss` (iproute2) to spot a foreign server on :8080 | `windows\bin\systemctl` runs `C:\llama-swap\start-llama-swap.bat` (or `PI_LLAMA_SWAP_BAT`); the `.cmd` launchers use `launchers\ensure-server.ps1` (Windows PowerShell 5.1, built in) |
-| `pi-loop --tui` (optional) | Python's built-in `curses` (on Debian/Ubuntu it is part of `python3`) | `pip install windows-curses` |
-| `pi-loop --tmux` (optional) | `tmux` | not available |
-| Web search for planner/reviewers (optional) | a Firecrawl MCP server + `pi-mcp-adapter`; add the tools via `PI_EXTRA_TOOLS` | the same, or in the `.cmd` launchers' `--tools` |
-| Loop recovery (recommended) | `pi-loop-police@1.14.1` + `patches/pi-loop-police-1.14.1-recovery.patch` | the same |
+| Pi | Node.js 22+, `pi` on PATH | the same (`pi` lands in `%APPDATA%\npm`) |
+| Models | GPU `llama-server` build, llama-swap, both GGUFs | the same; llama-swap in `C:\llama-swap` |
+| Shell for agents | bash 4+ with coreutils and `curl` | Git for Windows (Git Bash), set Pi's `shellPath` |
+| Feed and checks | Python 3 (stdlib) as `python3` | Python 3 as `python`; `windows\bin\python3` maps it |
+| `--tui` (optional) | built-in `curses` | `pip install windows-curses` |
+| `--tmux` (optional) | `tmux` | not available |
+| Web search (optional) | Firecrawl MCP + `pi-mcp-adapter` | the same |
 
-Which runner exists where: `pi-plan`, `pi-review`, `pi-exec`, `pi-pe`, `pi-stop` have native `.cmd` versions in
-`launchers/` and bash versions in `linux/`. `pi-code-review`, `pi-loop`, `pi-loop-status` and `pi-loop-tui` are bash
-only; on Windows, `windows\pi-loop.cmd` runs them under Git Bash (see [pi-loop on Windows](#pi-loop-on-windows)).
+On Linux, Swift fits 64K and Ornith Q6_K runs 160K (77 tok/s short, 735 tok/s prefill). `linux/` has the bash launchers and a systemd user unit.
 
-## Quick start
-
-1. **Install the tools.**
-   - Node.js 22+ and Git for Windows.
-   - Pi: `npm i -g @earendil-works/pi-coding-agent`
-   - A llama.cpp `llama-server` build for your GPU. For RX 6000 cards on Windows, see
-     [docs/HARDWARE.md](docs/HARDWARE.md).
-   - [llama-swap](https://github.com/mostlygeek/llama-swap/releases): unzip it to `C:\llama-swap`.
-2. **Download the models** (GGUF, from Hugging Face):
-   - Planner/reviewer: `ukisai/Swift-1.5-Qwen3.8-27B-GSQ-RCO-GGUF`, file `...-IQ2_XS-mtp.gguf` (8.8 GB)
-   - Executor: `ornith-ai/Ornith-1.5-9B-GGUF`, file `Ornith-1.5-9B-Q8_0.gguf` (9.8 GB)
-3. **llama-swap.** Copy `llama-swap/config.yaml` and `start-llama-swap.bat` to `C:\llama-swap`, then set the `server`
-   and `models` macros at the top of `config.yaml` to your paths.
-4. **Pi config.** Merge `pi-config/models.json` into `%USERPROFILE%\.pi\agent\models.json`, and the relevant keys of
-   `settings.example.json` into `%USERPROFILE%\.pi\agent\settings.json`. On Windows, also set `"shellPath"` to
-   Git's `bash.exe`. Run `pi --list-models`: both `swift27-xs-64k` and `ornith9b-q8` must appear. If a models.json
-   edit is invalid, every local model disappears from that list.
-5. **Launchers and prompts.** Copy everything in `launchers/` and `prompts/` into one folder on your PATH
-   (e.g. `%USERPROFILE%\.pi`). Rename `environment.example.md` to `environment.md` and edit it for your PC.
-   The prompts tell the models to check API docs with `firecrawl_search` / `firecrawl_scrape` when unsure. That's an
-   optional web-search MCP (e.g. a self-hosted Firecrawl). If you have one, add both names to `--tools` in
-   `pi-plan.cmd` and `pi-review.cmd`. Without it, the models fall back to reading code and running small experiments.
-6. **Recommended:** install `pi-loop-police@1.14.1` and apply `patches/pi-loop-police-1.14.1-recovery.patch`
-   (see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)).
-7. **Run it** in a project folder:
-
-```bat
-pi-pe "Add a --json flag to report.py that prints the summary as JSON, with a unittest"
-```
-
-Or run each step yourself, so you can read the plan before anything changes:
-
-```bat
-pi-plan "task"      &REM writes PLAN.md (add -p for no UI)
-pi-review           &REM appends corrections
-pi-exec             &REM carries it out (snapshots the project to PLAN.base/ first)
-pi-code-review      &REM Windows: pi-loop --run pi-code-review. Reviews what pi-exec changed; proven bugs -> PLAN.review.md + fix slice in PLAN.next.md
-pi-plan             &REM no task = plan the next slice from PLAN.next.md
-pi-stop             &REM unload the model, free VRAM
-```
-
-The first launcher you run starts llama-swap for you. To run it by hand, use `start-llama-swap.bat`
-(web UI: http://127.0.0.1:8080/ui).
-
-## Linux
-
-`linux/` has bash versions of the launchers. Tested on Lubuntu 26.04 + ROCm 7.1 (see [docs/HARDWARE.md](docs/HARDWARE.md)).
-
-1. Node.js 22+ (any install; a user-local tarball works), then `npm i -g @earendil-works/pi-coding-agent`.
-2. llama-server built for your GPU, and [llama-swap](https://github.com/mostlygeek/llama-swap/releases) (`linux_amd64` tarball).
-3. Copy `linux/llama-swap/config.yaml` next to llama-swap and edit its `server` / `models` macros. Install
-   `linux/llama-swap/llama-swap.service` to `~/.config/systemd/user/` (fix the paths), then
-   `systemctl --user enable --now llama-swap`. The launchers start it if it's stopped.
-4. Pi config as in step 4 above, in `~/.pi/agent/`. On Linux Swift fits 64K, so set its `contextWindow` to 65536
-   and drop the 48K `modelOverrides` entry.
-5. `cp linux/environment.example.md prompts/environment.md` and edit it (gitignored), then link the launchers onto
-   your PATH: `for f in pi-plan pi-review pi-exec pi-code-review pi-pe pi-stop pi-loop pi-loop-status; do ln -s "$PWD/linux/$f" ~/.local/bin/; done`.
-   They find the prompts in `../prompts` (or set `PI_PROMPTS`).
-6. loop-police and its patch: same as step 6.
-
-Measured on Linux (RX 6750 XT, ROCm 7.1, MTP n2, thinking on, through llama-swap):
-
-| Role | Model | Context | Decode short | Decode when nearly full |
-|---|---|---|---|---|
-| Planner / reviewers | Swift 1.5 27B IQ2_XS | 64K q4_0 | 37.6 tok/s | 21.6 at 52K |
-| Executor | Ornith 1.5 9B **Q6_K** (7.0 GB) | 160K q8_0 | 77.0 tok/s | 23.9 at 138K |
-| Executor, max context | Ornith 1.5 9B Q6_K | 256K q4_0 | ~75 tok/s | 16.2 at 236K |
-| Executor, faster prefill | Ornith 1.5 9B Q8_0 | 80K q8_0 | 68.5 tok/s | 35.2 at 65K |
-
-The Q6_K decodes faster than the Q8_0 and fits twice the context, but prefills ~30% slower (735 vs 1038 tok/s).
-`linux/llama-swap/config.yaml` uses it under the same `ornith9b-q8` id, so Pi and the launchers need no changes;
-set that model's `contextWindow` to 163840 in models.json. Download `Ornith-1.5-9B-Q6_K.gguf` from the same repo.
-
-### pi-loop: run every slice unattended
-
-```bash
-pi-loop "task"          # or pi-loop TASK.md; plain pi-loop resumes wherever the files say
-pi-loop --tui "task"    # full-screen view: live feed, plan boxes, verdicts, queued slices, stage times, tok/s
-pi-loop --tmux "task"   # the same feed in tmux with a status pane
-```
-
-Per slice: `pi-plan -p` -> `pi-review -p` -> `pi-exec -p` -> `pi-code-review -p`, then the next `## Slice` of
-PLAN.next.md (code-review fix slices come first), until no slices are left. Every agent prints one line per action:
-
-```
- 3:51 [plan] ▸ bash  cd /home/freddy/bench/loop-test/PLAN.rehearsal && python3 -m unittest test_todo…
- 3:51 [plan]   ✓  0.1s  OK
- 5:14 [plan] done in 5m14s  tools 19  output 8915 tok  thinking ~4428 tok
- ...
- 2:18 [code-review] done in 2m18s  tools 6  output 3659 tok  thinking ~2543 tok
- 2:18 [code-review] │ CODE REVIEW: PASS
-```
-
-The next step is decided from the files on disk (no plan / unreviewed plan / open boxes / unreviewed code), so a
-plain `pi-loop` resumes at the right step after a stop or Ctrl-C. First run, a two-slice todo CLI: plan 5m14s /
-3m42s, plan review 2m04s / 1m38s, exec 1m13s / 3m26s, code review 1m42s / 2m18s per slice; 8/8 tests, every
-command and error path correct.
-
-The feed streams each agent's thinking (dim, `💭`) and replies (`│`) as they arrive, with an emoji per tool (💻 bash, 📖 read, 📝 write, ✏️ edit, 🔍 grep, 🔎 find, 📂 ls, 🌐 search), ✅/❌ results, and a `⚡ tok/s` line after every model reply (decode speed, tokens, prompt time); `PI_FEED_THINKING=short` shows only the first line of each thought, `off` hides it. Full sessions are saved in `PLAN.loop/*.jsonl`. It stops and says why when exec leaves open boxes or Blockers, the
-planner or executor hits its time limit, the code review keeps finding bugs (`--max-fix-rounds`, default 2), or the
-slice cap is reached (`--max-slices`, default 6). The reviewers are kept short on purpose: thinking `low`, capped at 1536 thinking tokens per reply
-(Pi provider `qwen27-review` sends llama.cpp's `thinking_budget_tokens` from `thinkingBudgets.low`; the planner is
-not capped), a ~10 tool-call budget in the prompt, and hard limits (`PI_REVIEW_TIMEOUT`=360 s, `PI_CODE_REVIEW_TIMEOUT`=480 s;
-`PI_PLAN_TIMEOUT` / `PI_EXEC_TIMEOUT`=1800 s). They end with `PLAN REVIEW: PASS|FIXED n` and
-`VERDICT: PASS|FAIL n` (first line of PLAN.review.md).
-
-llama-swap holds one model at a time for everyone using it, so don't run two jobs at once (e.g. one on a laptop
-through a tunnel and one on the GPU PC): they swap models out from under each other.
-
-Per-machine settings (extra tools, a remote llama-swap) go in `~/.config/pi-local/env`; see the top of
-`linux/_common.sh`.
-
-### pi-loop on Windows
-
-`windows\pi-loop.cmd` runs the same bash scripts under Git Bash, so a Windows run behaves exactly like a Linux one.
-Install the Windows column of [Dependencies](#dependencies), do Quick start steps 1-6, then:
-
-1. Clone this repo somewhere permanent (e.g. `%USERPROFILE%\pi-loop`) and put its `windows\` folder on PATH, or call
-   `windows\pi-loop.cmd` by full path. Don't copy the files: the launcher finds `..\linux\` and `..\prompts\` from where it is.
-2. `copy prompts\environment.example.md prompts\environment.md` and edit it for your PC (say that the bash tool is
-   Git Bash, and that Python is `python`, not `python3`).
-3. Merge the `qwen27-review` provider from `pi-config/models.json` into your `models.json` (the reviewers use it).
-   If `settings.json` lists a bare `swift27-xs-64k` in `enabledModels`, write it as `qwen27/swift27-xs-64k`: the id
-   now exists under two providers.
-4. Optional: `%USERPROFILE%\.config\pi-local\env` with the same settings as on Linux (`PI_EXTRA_TOOLS`,
-   `PI_EXCLUDE_TOOLS`, model overrides). If Git Bash is not in `C:\Program Files\Git`, set `PI_BASH` to its `bash.exe`.
-5. For `--tui`: `pip install windows-curses`.
-
-```bat
-pi-loop TASK.md                         &REM task text with & | < > ( ) breaks in cmd, so a file is safest
-pi-loop --tui "Add a --json flag to report.py"
-pi-loop --run pi-code-review -p         &REM any other script from linux\
-pi-loop --run pi-loop-status            &REM side view in a second terminal
-```
-
-`--tmux` doesn't work on Windows. Ctrl-C stops the whole run, agents included (`q` in the TUI does the same through
-`taskkill /T`), and a plain `pi-loop` resumes it.
-
-## Repo layout
+<p><img src=".github/assets/section-repo-layout.png" alt="05 Repo layout" width="100%"></p>
 
 | Path | What |
 |---|---|
-| `linux/` | bash launchers (incl. `pi-code-review`, `pi-loop`, `pi-loop-tui`, `pi-feed.py`), Linux `environment.example.md`, llama-swap config + systemd user unit |
-| `windows/` | `pi-loop.cmd` (runs `pi-loop` and the other `linux/` scripts under Git Bash), `bin/` shims (`python3`, `systemctl`), `pi-loop-tui-win.py` (TUI on Windows) |
-| `launchers/` | Windows: `pi-plan`, `pi-review`, `pi-exec`, `pi-pe`, `pi-stop`, plus `ensure-server.ps1` (starts llama-swap and loads a model by id) |
-| `prompts/` | `planner.md`, `reviewer.md`, `executor.md`, `code-reviewer.md` (role rules), `environment.example.md` (your machine's facts), `local-session.md` |
-| `llama-swap/` | `config.yaml` with both models' tuned llama-server flags |
-| `pi-config/` | Pi provider/model definitions (thinking-level mapping) and compaction settings |
-| `patches/` | Fix for pi-loop-police's loop recovery silently ending the session |
-| `docs/` | [WORKFLOW](docs/WORKFLOW.md) · [MODELS](docs/MODELS.md) (benchmarks, what failed) · [TUNING](docs/TUNING.md) (VRAM, context) · [HARDWARE](docs/HARDWARE.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) |
+| `linux/` | bash launchers, `pi-feed.py`, Linux environment example, llama-swap config + systemd unit |
+| `windows/` | `pi-loop.cmd` (runs the bash scripts under Git Bash), `bin/` shims, Windows TUI |
+| `launchers/` | Windows `pi-plan`, `pi-review`, `pi-exec`, `pi-pe`, `pi-stop`, `ensure-server.ps1` |
+| `prompts/` | planner, reviewer, executor and code-reviewer role rules, plus `environment.example.md` |
+| `llama-swap/` | `config.yaml` with both models' tuned flags |
+| `pi-config/` | Pi provider/model definitions and compaction settings |
+| `patches/` | fix for pi-loop-police's loop recovery silently ending the session |
+| `docs/` | [WORKFLOW](docs/WORKFLOW.md) · [MODELS](docs/MODELS.md) · [TUNING](docs/TUNING.md) · [HARDWARE](docs/HARDWARE.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) |
 
-## Using other models
+<p><img src=".github/assets/section-notes.png" alt="06 Notes" width="100%"></p>
 
-Model IDs live in three places, and they must match:
-- `MODEL_ID` / `PI_MODEL` at the top of each launcher;
-- the model key in llama-swap's `config.yaml`;
-- the `id` in Pi's `models.json`.
+- llama-swap holds one model at a time for everyone using it — don't run two jobs at once.
+- Model IDs live in three places and must match: the launchers, llama-swap's `config.yaml`, and Pi's `models.json`.
+- A plain `pi-loop` resumes wherever the files on disk say, after a stop or Ctrl-C. `--tmux` doesn't work on Windows.
+- First run on a two-slice todo CLI: 8/8 tests, every command and error path correct. The first code review found a real pass-counter bug and missed a ko-rule bug, with no false findings.
+- MIT for the scripts and prompts. The models have their own licences.
 
-The prompts state each model's context size, so update `planner.md`, `reviewer.md` and `executor.md` too. Before you
-trust a new planner, run it on a small task in an empty folder. It must write only `PLAN.*` files. If it writes the
-code itself, it isn't a planner. [docs/MODELS.md](docs/MODELS.md) lists what was tried and why it failed.
-
-## License
-
-MIT for the scripts and prompts in this repo. The patch applies to pi-loop-police (MIT). The models have their own licenses.
+<p align="center">
+  <img src=".github/assets/footer.png" alt="play games · make games" width="100%">
+</p>
